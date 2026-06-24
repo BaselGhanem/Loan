@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "basel_ghanem_loan_simulator_v2_basel_fixed_profile";
-  const EXPORT_VERSION = "1.0.1";
+  const STORAGE_KEY = "basel_ghanem_loan_simulator_v1";
+  const EXPORT_VERSION = "1.0.0";
   const MAX_MONTHS = 900;
   const EPS = 0.000001;
 
@@ -13,20 +13,17 @@
     },
     loan: {
       loanName: "قرض Basel الشخصي",
-      assetPrice: 51000,
+      assetPrice: 0,
       downPayment: 0,
-      principal: 51000,
-      startDate: "2026-06-01",
-      firstPaymentDate: "2026-07-01",
-      termMonths: 180,
-      annualRate: 6.1,
-      customInstallment: 435,
-      installmentFee: 1.87,
+      principal: 0,
+      startDate: todayISO(),
+      termMonths: 120,
+      annualRate: 6.5,
       interestType: "fixed",
       paymentFrequency: "monthly",
       gracePeriod: 0,
-      monthlyBudget: 436.87,
-      loanNotes: "القسط الشهري المثبت: 435 د.أ + رسوم تقديرية على كل قسط 1.87 د.أ."
+      monthlyBudget: 0,
+      loanNotes: ""
     },
     ratePeriods: [],
     earlyPayments: [],
@@ -73,7 +70,7 @@
       "appShell", "navTabs", "saveState", "welcomeTitle", "heroInsight", "remainingBalance", "progressRing",
       "completionPct", "payoffDate", "nextPaymentDate", "loanHealth", "kpiGrid", "balanceChart",
       "breakdownChart", "smartInsights", "timeline", "loanForm", "loanName", "assetPrice", "downPayment",
-      "principal", "startDate", "firstPaymentDate", "termMonths", "termYears", "annualRate", "customInstallment", "installmentFee", "interestType", "paymentFrequency",
+      "principal", "startDate", "termMonths", "termYears", "annualRate", "interestType", "paymentFrequency",
       "gracePeriod", "monthlyBudget", "loanNotes", "syncPrincipalBtn", "rateForm", "rateId", "rateStart",
       "rateEnd", "rateValue", "rateNote", "clearRateFormBtn", "rateImpact", "rateRows", "earlyPaymentForm",
       "paymentId", "paymentDate", "paymentAmount", "paymentMethod", "paymentNote", "clearPaymentFormBtn",
@@ -180,7 +177,7 @@
     const key = event.target.id;
     if (!(key in state.loan)) return;
 
-    if (["assetPrice", "downPayment", "principal", "annualRate", "customInstallment", "installmentFee", "gracePeriod", "monthlyBudget"].includes(key)) {
+    if (["assetPrice", "downPayment", "principal", "annualRate", "gracePeriod", "monthlyBudget"].includes(key)) {
       state.loan[key] = num(event.target.value);
     } else if (key === "termMonths") {
       state.loan.termMonths = Math.max(1, Math.round(num(event.target.value)) || 1);
@@ -357,7 +354,6 @@
       number: row.number,
       date: row.date,
       installment: row.installment,
-      installmentFee: row.installmentFee || 0,
       principalPaid: row.principalPaid,
       interestPaid: row.interestPaid,
       earlyPayment: row.earlyPayment,
@@ -443,7 +439,7 @@
     let totalPrincipal = 0;
     let totalEarly = 0;
     let monthsElapsed = 0;
-    let firstPaymentDate = validDate(loan.firstPaymentDate) ? loan.firstPaymentDate : addMonths(startDate, gracePeriod + periodMonths);
+    let firstPaymentDate = addMonths(startDate, gracePeriod + periodMonths);
     let currentRate = options.refinance?.rate || baseRate;
     let currentPeriodPayment = 0;
     let loanPaid = principal <= EPS;
@@ -451,9 +447,7 @@
     let previousAppliedRate = null;
     let rateChangedThisMonth = false;
 
-    const manualInstallment = Math.max(0, num(loan.customInstallment));
-    const installmentFee = Math.max(0, num(loan.installmentFee));
-    const originalPayment = manualInstallment > EPS ? manualInstallment : calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
+    const originalPayment = calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
     currentPeriodPayment = originalPayment;
 
     if (loanPaid) {
@@ -469,13 +463,12 @@
         nextPaymentDate: null,
         remainingBalance: 0,
         rateChangeCount,
-        periodMonths,
-        installmentFee
+        periodMonths
       });
     }
 
     for (let monthIndex = 1; monthIndex <= MAX_MONTHS; monthIndex++) {
-      const date = addMonths(firstPaymentDate, monthIndex - 1);
+      const date = addMonths(startDate, monthIndex);
       const dueThisMonth = monthIndex > gracePeriod && ((monthIndex - gracePeriod) % periodMonths === 0);
       let rateUsed = options.refinance?.rate || getRateForDate(currentState, date, options.useRatePeriods, baseRate);
       rateUsed = Math.max(0, rateUsed);
@@ -483,7 +476,7 @@
       rateChangedThisMonth = previousAppliedRate !== null && Math.abs(previousAppliedRate - rateUsed) > EPS;
       if (rateChangedThisMonth) {
         rateChangeCount += 1;
-        currentPeriodPayment = manualInstallment > EPS ? manualInstallment : calculatePeriodicPayment(balance, rateUsed, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+        currentPeriodPayment = calculatePeriodicPayment(balance, rateUsed, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
       }
       previousAppliedRate = rateUsed;
       currentRate = rateUsed;
@@ -519,12 +512,12 @@
         notes.push(payment.note ? `دفعة مبكرة: ${payment.note}` : "دفعة مبكرة");
 
         if (payment.method === "reduceInstallment") {
-          currentPeriodPayment = manualInstallment > EPS ? manualInstallment : calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+          currentPeriodPayment = calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
         }
 
         if (payment.method === "balanced") {
-          const reducedPayment = manualInstallment > EPS ? manualInstallment : calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
-          currentPeriodPayment = manualInstallment > EPS ? manualInstallment : Math.max(reducedPayment, currentPeriodPayment * 0.92);
+          const reducedPayment = calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+          currentPeriodPayment = Math.max(reducedPayment, currentPeriodPayment * 0.92);
         }
       });
 
@@ -538,7 +531,6 @@
         date,
         startingBalance,
         installment: scheduledPayment,
-        installmentFee: dueThisMonth ? installmentFee : 0,
         principalPaid,
         interestPaid: interest,
         earlyPayment: earlyPaymentAmount,
@@ -573,26 +565,22 @@
       nextPaymentDate: nextRow?.date || firstPaymentDate,
       remainingBalance: lastRow?.endingBalance ?? startBalance,
       rateChangeCount,
-      periodMonths,
-      installmentFee
+      periodMonths
     });
   }
 
   function summarizeSimulation(result) {
     const totalInstallments = result.schedule.reduce((sum, row) => sum + row.installment, 0);
-    const totalFees = result.schedule.reduce((sum, row) => sum + (row.installmentFee || 0), 0);
-    const totalPaid = totalInstallments + result.totalEarly + totalFees;
+    const totalPaid = totalInstallments + result.totalEarly;
     const paidAmount = result.startingPrincipal - result.remainingBalance;
     return {
       ...result,
       totalInstallments,
       totalPaid,
-      totalFees,
       paidAmount: Math.max(0, paidAmount),
       remainingMonths: Math.max(0, result.schedule.filter((row) => row.endingBalance > EPS).length),
       averageRate: averageRate(result.schedule),
-      currentRate: getCurrentScheduleRate(result.schedule),
-      installmentFee: result.installmentFee || 0
+      currentRate: getCurrentScheduleRate(result.schedule)
     };
   }
 
@@ -872,7 +860,6 @@
           <td>${dateLabel(row.date)}</td>
           <td>${money(row.startingBalance)}</td>
           <td>${money(row.installment)}</td>
-          <td>${money(row.installmentFee || 0)}</td>
           <td>${money(row.principalPaid)}</td>
           <td>${money(row.interestPaid)}</td>
           <td>${money(row.earlyPayment)}</td>
@@ -1254,13 +1241,12 @@
   }
 
   function exportScheduleCSV() {
-    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Installment Fee", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
+    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
     const rows = derived.current.schedule.map((row) => [
       row.number,
       row.date,
       fixed(row.startingBalance),
       fixed(row.installment),
-      fixed(row.installmentFee || 0),
       fixed(row.principalPaid),
       fixed(row.interestPaid),
       fixed(row.earlyPayment),

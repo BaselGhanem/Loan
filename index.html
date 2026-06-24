@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260624_loan_fix1" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -150,10 +150,6 @@
             <input type="date" id="startDate" />
           </label>
           <label class="field">
-            <span>تاريخ أول قسط</span>
-            <input type="date" id="firstPaymentDate" />
-          </label>
-          <label class="field">
             <span>مدة القرض بالأشهر</span>
             <input type="number" id="termMonths" min="1" step="1" inputmode="numeric" />
           </label>
@@ -164,14 +160,6 @@
           <label class="field">
             <span>نسبة الفائدة السنوية</span>
             <input type="number" id="annualRate" min="0" step="0.01" inputmode="decimal" />
-          </label>
-          <label class="field">
-            <span>القسط الشهري المثبت</span>
-            <input type="number" id="customInstallment" min="0" step="0.01" inputmode="decimal" />
-          </label>
-          <label class="field">
-            <span>رسوم على كل قسط</span>
-            <input type="number" id="installmentFee" min="0" step="0.01" inputmode="decimal" />
           </label>
           <label class="field">
             <span>نوع الفائدة</span>
@@ -346,7 +334,6 @@
                   <th>التاريخ</th>
                   <th>رصيد البداية</th>
                   <th>القسط</th>
-                  <th>رسوم القسط</th>
                   <th>الأصل المدفوع</th>
                   <th>الفائدة</th>
                   <th>دفعة مبكرة</th>
@@ -496,6 +483,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260624_loan_fix1"></script>
+  <script src="app.js"></script>
 </body>
 </html>
