@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "basel_ghanem_loan_simulator_v1";
-  const EXPORT_VERSION = "1.0.0";
+  const STORAGE_KEY = "basel_ghanem_loan_simulator_v3_personal_fixed_loan";
+  const EXPORT_VERSION = "1.1.0";
   const MAX_MONTHS = 900;
   const EPS = 0.000001;
 
@@ -13,17 +13,20 @@
     },
     loan: {
       loanName: "قرض Basel الشخصي",
-      assetPrice: 0,
+      assetPrice: 51000,
       downPayment: 0,
-      principal: 0,
-      startDate: todayISO(),
-      termMonths: 120,
-      annualRate: 6.5,
+      principal: 51000,
+      startDate: "2026-06-01",
+      firstPaymentDate: "2026-07-01",
+      termMonths: 180,
+      annualRate: 6.1,
+      customInstallment: 433.13,
+      installmentFee: 1.87,
       interestType: "fixed",
       paymentFrequency: "monthly",
       gracePeriod: 0,
       monthlyBudget: 0,
-      loanNotes: ""
+      loanNotes: "القسط المحسوب 433.13 د.أ + رسوم شهرية 1.87 د.أ = 435 د.أ."
     },
     ratePeriods: [],
     earlyPayments: [],
@@ -58,11 +61,13 @@
 
   function init() {
     cacheElements();
+    applyDeviceClass();
     applyPreferences();
     bindEvents();
     hydrateForms();
     setActiveTab(state.lastOpenedTab || "dashboard");
     recalculateAndRender();
+    showToast("تم تحميل بيانات قرض Basel: القسط 433.13 + رسوم 1.87 = 435 د.أ.", "success");
   }
 
   function cacheElements() {
@@ -70,8 +75,8 @@
       "appShell", "navTabs", "saveState", "welcomeTitle", "heroInsight", "remainingBalance", "progressRing",
       "completionPct", "payoffDate", "nextPaymentDate", "loanHealth", "kpiGrid", "balanceChart",
       "breakdownChart", "smartInsights", "timeline", "loanForm", "loanName", "assetPrice", "downPayment",
-      "principal", "startDate", "termMonths", "termYears", "annualRate", "interestType", "paymentFrequency",
-      "gracePeriod", "monthlyBudget", "loanNotes", "syncPrincipalBtn", "rateForm", "rateId", "rateStart",
+      "principal", "startDate", "firstPaymentDate", "termMonths", "termYears", "annualRate", "customInstallment",
+      "installmentFee", "interestType", "paymentFrequency", "gracePeriod", "monthlyBudget", "loanNotes", "syncPrincipalBtn", "rateForm", "rateId", "rateStart",
       "rateEnd", "rateValue", "rateNote", "clearRateFormBtn", "rateImpact", "rateRows", "earlyPaymentForm",
       "paymentId", "paymentDate", "paymentAmount", "paymentMethod", "paymentNote", "clearPaymentFormBtn",
       "paymentImpact", "paymentRows", "impactChart", "yearFilter", "scheduleSearch", "exportCsvBtn",
@@ -79,7 +84,8 @@
       "refinanceFees", "scenarioName", "saveScenarioBtn", "cloneScenarioBtn", "scenarioChart", "scenarioCards",
       "scenarioList", "accentColor", "themeMode", "layoutPreference", "reminderDay", "reminderNote",
       "exportJsonBtn", "importJsonInput", "integrityBtn", "integrityBox", "resetDataBtn", "toast",
-      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn"
+      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn",
+      "fabWrap", "fabMain", "fabMenu"
     ];
 
     ids.forEach((id) => {
@@ -91,9 +97,7 @@
     els.navTabs.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-tab]");
       if (!btn) return;
-      setActiveTab(btn.dataset.tab);
-      state.lastOpenedTab = btn.dataset.tab;
-      autoSave();
+      goToTab(btn.dataset.tab);
     });
 
     els.loanForm.addEventListener("input", handleLoanInput);
@@ -139,8 +143,23 @@
     els.exportCsvBtn.addEventListener("click", exportScheduleCSV);
     els.printReportBtn.addEventListener("click", () => window.print());
     els.quickPaymentBtn.addEventListener("click", () => {
-      setActiveTab("payments");
+      goToTab("payments");
       els.paymentAmount.focus();
+    });
+
+    els.fabMain?.addEventListener("click", () => {
+      els.fabWrap?.classList.toggle("open");
+      els.fabMain?.setAttribute("aria-expanded", String(els.fabWrap?.classList.contains("open")));
+    });
+
+    els.fabMenu?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-fab-tab], [data-fab-action]");
+      if (!btn) return;
+      els.fabWrap?.classList.remove("open");
+      els.fabMain?.setAttribute("aria-expanded", "false");
+      if (btn.dataset.fabTab) goToTab(btn.dataset.fabTab);
+      if (btn.dataset.fabAction === "print") window.print();
+      if (btn.dataset.fabAction === "backup") exportJSONBackup();
     });
 
     [els.extraMonthly, els.oneTimeAmount, els.oneTimeDate, els.refinanceRate, els.refinanceFees, els.scenarioName].forEach((el) => {
@@ -169,6 +188,7 @@
     });
 
     window.addEventListener("resize", debounce(() => {
+      applyDeviceClass();
       renderCharts();
     }, 160));
   }
@@ -177,7 +197,7 @@
     const key = event.target.id;
     if (!(key in state.loan)) return;
 
-    if (["assetPrice", "downPayment", "principal", "annualRate", "gracePeriod", "monthlyBudget"].includes(key)) {
+    if (["assetPrice", "downPayment", "principal", "annualRate", "customInstallment", "installmentFee", "gracePeriod", "monthlyBudget"].includes(key)) {
       state.loan[key] = num(event.target.value);
     } else if (key === "termMonths") {
       state.loan.termMonths = Math.max(1, Math.round(num(event.target.value)) || 1);
@@ -317,6 +337,23 @@
     document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === safeTab));
   }
 
+  function goToTab(tab) {
+    setActiveTab(tab);
+    state.lastOpenedTab = tab;
+    autoSave();
+    const labels = {
+      dashboard: "لوحة التحكم",
+      loan: "بيانات القرض",
+      rates: "الفوائد المتغيرة",
+      payments: "الدفعات المبكرة",
+      schedule: "جدول السداد",
+      scenarios: "السيناريوهات",
+      settings: "الإعدادات"
+    };
+    showToast(`تم فتح ${labels[tab] || "القسم المطلوب"}.`, "info");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function hydrateForms() {
     Object.entries(state.loan).forEach(([key, value]) => {
       if (els[key]) els[key].value = value ?? "";
@@ -354,6 +391,8 @@
       number: row.number,
       date: row.date,
       installment: row.installment,
+      loanPayment: row.loanPayment,
+      installmentFee: row.installmentFee,
       principalPaid: row.principalPaid,
       interestPaid: row.interestPaid,
       earlyPayment: row.earlyPayment,
@@ -365,6 +404,9 @@
       calculatedAt: derived.generatedAt,
       remainingBalance: derived.current.remainingBalance,
       paymentAmount: derived.current.paymentAmount,
+      totalDuePayment: derived.current.totalDuePayment,
+      installmentFee: derived.current.installmentFee,
+      totalFees: derived.current.totalFees,
       totalInterest: derived.current.totalInterest,
       totalPaid: derived.current.totalPaid,
       payoffDate: derived.current.payoffDate,
@@ -429,6 +471,9 @@
     const termMonths = Math.max(1, Math.round(num(loan.termMonths)) || 1);
     const gracePeriod = Math.max(0, Math.round(num(loan.gracePeriod)) || 0);
     const baseRate = Math.max(0, num(loan.annualRate));
+    const installmentFee = Math.max(0, num(loan.installmentFee));
+    const customInstallment = Math.max(0, num(loan.customInstallment));
+    const hasCustomInstallment = customInstallment > EPS;
     const startBalance = principal + (options.refinance?.fees || 0);
     const schedule = [];
     const earlyPaymentMap = buildEarlyPaymentMap(currentState, options);
@@ -439,7 +484,8 @@
     let totalPrincipal = 0;
     let totalEarly = 0;
     let monthsElapsed = 0;
-    let firstPaymentDate = addMonths(startDate, gracePeriod + periodMonths);
+    const configuredFirstPaymentDate = validDate(loan.firstPaymentDate) ? loan.firstPaymentDate : "";
+    let firstPaymentDate = configuredFirstPaymentDate || addMonths(startDate, gracePeriod + periodMonths);
     let currentRate = options.refinance?.rate || baseRate;
     let currentPeriodPayment = 0;
     let loanPaid = principal <= EPS;
@@ -447,7 +493,7 @@
     let previousAppliedRate = null;
     let rateChangedThisMonth = false;
 
-    const originalPayment = calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
+    const originalPayment = hasCustomInstallment ? customInstallment : calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
     currentPeriodPayment = originalPayment;
 
     if (loanPaid) {
@@ -463,20 +509,23 @@
         nextPaymentDate: null,
         remainingBalance: 0,
         rateChangeCount,
-        periodMonths
+        periodMonths,
+        installmentFee
       });
     }
 
     for (let monthIndex = 1; monthIndex <= MAX_MONTHS; monthIndex++) {
-      const date = addMonths(startDate, monthIndex);
-      const dueThisMonth = monthIndex > gracePeriod && ((monthIndex - gracePeriod) % periodMonths === 0);
+      const date = configuredFirstPaymentDate ? addMonths(firstPaymentDate, monthIndex - 1) : addMonths(startDate, monthIndex);
+      const dueThisMonth = configuredFirstPaymentDate ? ((monthIndex - 1) % periodMonths === 0) : (monthIndex > gracePeriod && ((monthIndex - gracePeriod) % periodMonths === 0));
       let rateUsed = options.refinance?.rate || getRateForDate(currentState, date, options.useRatePeriods, baseRate);
       rateUsed = Math.max(0, rateUsed);
 
       rateChangedThisMonth = previousAppliedRate !== null && Math.abs(previousAppliedRate - rateUsed) > EPS;
       if (rateChangedThisMonth) {
         rateChangeCount += 1;
-        currentPeriodPayment = calculatePeriodicPayment(balance, rateUsed, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+        if (!hasCustomInstallment) {
+          currentPeriodPayment = calculatePeriodicPayment(balance, rateUsed, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+        }
       }
       previousAppliedRate = rateUsed;
       currentRate = rateUsed;
@@ -487,17 +536,22 @@
       balance += interest;
       totalInterest += interest;
 
+      let loanPayment = 0;
       let scheduledPayment = 0;
+      let feeThisInstallment = 0;
       let principalPaid = 0;
       let notes = [];
 
-      if (monthIndex <= gracePeriod) {
+      if (!configuredFirstPaymentDate && monthIndex <= gracePeriod) {
         notes.push("فترة سماح: تراكم فائدة بدون قسط");
       } else if (dueThisMonth) {
-        scheduledPayment = Math.min(balance, currentPeriodPayment + Math.max(0, num(options.extraMonthly)));
-        principalPaid = Math.max(0, scheduledPayment - interest);
-        balance -= scheduledPayment;
+        loanPayment = Math.min(balance, currentPeriodPayment + Math.max(0, num(options.extraMonthly)));
+        feeThisInstallment = loanPayment > EPS ? installmentFee : 0;
+        scheduledPayment = loanPayment + feeThisInstallment;
+        principalPaid = Math.max(0, loanPayment - interest);
+        balance -= loanPayment;
         totalPrincipal += Math.min(principalPaid, startingBalance);
+        if (feeThisInstallment > EPS) notes.push(`رسوم شهرية ${money(feeThisInstallment)}`);
       }
 
       const earlyPayments = earlyPaymentMap.get(monthKey(date)) || [];
@@ -531,6 +585,8 @@
         date,
         startingBalance,
         installment: scheduledPayment,
+        loanPayment,
+        installmentFee: feeThisInstallment,
         principalPaid,
         interestPaid: interest,
         earlyPayment: earlyPaymentAmount,
@@ -565,17 +621,25 @@
       nextPaymentDate: nextRow?.date || firstPaymentDate,
       remainingBalance: lastRow?.endingBalance ?? startBalance,
       rateChangeCount,
-      periodMonths
+      periodMonths,
+      installmentFee
     });
   }
 
   function summarizeSimulation(result) {
     const totalInstallments = result.schedule.reduce((sum, row) => sum + row.installment, 0);
+    const totalLoanPayments = result.schedule.reduce((sum, row) => sum + row.loanPayment, 0);
+    const totalFees = result.schedule.reduce((sum, row) => sum + row.installmentFee, 0);
     const totalPaid = totalInstallments + result.totalEarly;
     const paidAmount = result.startingPrincipal - result.remainingBalance;
+    const paymentAmount = result.paymentAmount || 0;
     return {
       ...result,
       totalInstallments,
+      totalLoanPayments,
+      totalFees,
+      installmentFee: result.installmentFee || 0,
+      totalDuePayment: paymentAmount + (result.installmentFee || 0),
       totalPaid,
       paidAmount: Math.max(0, paidAmount),
       remainingMonths: Math.max(0, result.schedule.filter((row) => row.endingBalance > EPS).length),
@@ -657,11 +721,13 @@
     const countdown = monthsBetween(todayISO(), current.payoffDate);
     const currentRate = current.currentRate || num(state.loan.annualRate);
     const monthlyBudget = num(state.loan.monthlyBudget);
-    const budgetImpact = monthlyBudget > 0 ? safePercent(current.paymentAmount, monthlyBudget) : 0;
+    const visiblePayment = current.totalDuePayment || current.paymentAmount;
+    const budgetImpact = monthlyBudget > 0 ? safePercent(visiblePayment, monthlyBudget) : 0;
 
     const cards = [
-      { label: "القسط الحالي", value: money(current.paymentAmount), hint: state.loan.paymentFrequency === "quarterly" ? "قسط ربع سنوي" : "قسط شهري" },
+      { label: "القسط الشهري", value: money(visiblePayment), hint: `${money(current.paymentAmount)} قسط + ${money(current.installmentFee || 0)} رسوم` },
       { label: "إجمالي الفائدة", value: money(current.totalInterest), hint: `الخطة الأصلية: ${money(original.totalInterest)}` },
+      { label: "إجمالي الرسوم", value: money(current.totalFees || 0), hint: `${money(current.installmentFee || 0)} على كل قسط` },
       { label: interestSaved >= 0 ? "الفائدة الموفرة" : "زيادة الفائدة", value: money(Math.abs(interestSaved)), hint: interestSaved >= 0 ? "نتيجة الدفعات أو التحسينات" : "نتيجة ارتفاع الفوائد أو الرسوم" },
       { label: monthsSaved >= 0 ? "الأشهر الموفرة" : "أشهر إضافية", value: `${Math.abs(Math.round(monthsSaved))} شهر`, hint: "مقارنة بالخطة الأصلية" },
       { label: "المبلغ المدفوع", value: money(current.paidAmount), hint: "أصل القرض المسدد حتى نهاية الخطة" },
@@ -690,7 +756,7 @@
     const monthsSaved = derived.monthsSaved;
     const highRate = state.ratePeriods.find((period) => num(period.rate) >= num(state.loan.annualRate) + 1.5);
     const monthlyBudget = num(state.loan.monthlyBudget);
-    const budgetStatus = monthlyBudget > 0 && current.paymentAmount > monthlyBudget ? "أعلى من الميزانية المريحة" : "ضمن نطاق مقبول";
+    const budgetStatus = monthlyBudget > 0 && (current.totalDuePayment || current.paymentAmount) > monthlyBudget ? "أعلى من الميزانية المريحة" : "ضمن نطاق مقبول";
     const bestStrategy = recommendStrategy();
 
     const insights = [
@@ -716,7 +782,7 @@
       },
       {
         title: "أثر الميزانية الشهرية",
-        body: monthlyBudget > 0 ? `القسط الحالي ${budgetStatus}. القسط يمثل ${formatNumber(safePercent(current.paymentAmount, monthlyBudget), 0)}% من الميزانية التي أدخلتها.` : "أدخل ميزانية شهرية مريحة للحصول على قراءة أدق لضغط القسط."
+        body: monthlyBudget > 0 ? `القسط الحالي ${budgetStatus}. القسط يمثل ${formatNumber(safePercent((current.totalDuePayment || current.paymentAmount), monthlyBudget), 0)}% من الميزانية التي أدخلتها.` : "أدخل ميزانية شهرية مريحة للحصول على قراءة أدق لضغط القسط."
       }
     ];
 
@@ -848,7 +914,7 @@
     }
 
     if (!rows.length) {
-      els.scheduleRows.innerHTML = `<tr><td colspan="10">لا توجد نتائج مطابقة.</td></tr>`;
+      els.scheduleRows.innerHTML = `<tr><td colspan="11">لا توجد نتائج مطابقة.</td></tr>`;
       return;
     }
 
@@ -860,6 +926,7 @@
           <td>${dateLabel(row.date)}</td>
           <td>${money(row.startingBalance)}</td>
           <td>${money(row.installment)}</td>
+          <td>${money(row.installmentFee || 0)}</td>
           <td>${money(row.principalPaid)}</td>
           <td>${money(row.interestPaid)}</td>
           <td>${money(row.earlyPayment)}</td>
@@ -1241,12 +1308,14 @@
   }
 
   function exportScheduleCSV() {
-    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
+    const header = ["Payment Number", "Date", "Starting Balance", "Total Installment", "Installment Fee", "Loan Payment", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
     const rows = derived.current.schedule.map((row) => [
       row.number,
       row.date,
       fixed(row.startingBalance),
       fixed(row.installment),
+      fixed(row.installmentFee || 0),
+      fixed(row.loanPayment || Math.max(0, row.installment - (row.installmentFee || 0))),
       fixed(row.principalPaid),
       fixed(row.interestPaid),
       fixed(row.earlyPayment),
@@ -1297,6 +1366,12 @@
     }
 
     return { ok: true, message: "" };
+  }
+
+  function applyDeviceClass() {
+    const isCoarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    const isSmallScreen = Math.min(window.innerWidth || 0, window.screen?.width || Infinity) <= 820;
+    document.body.classList.toggle("mobile-device", Boolean(isCoarse || isSmallScreen));
   }
 
   function applyPreferences() {
@@ -1361,6 +1436,9 @@
     merged.loan.downPayment = num(merged.loan.downPayment);
     merged.loan.termMonths = Math.max(1, Math.round(num(merged.loan.termMonths)) || 1);
     merged.loan.annualRate = Math.max(0, num(merged.loan.annualRate));
+    merged.loan.customInstallment = Math.max(0, num(merged.loan.customInstallment));
+    merged.loan.installmentFee = Math.max(0, num(merged.loan.installmentFee));
+    merged.loan.firstPaymentDate = validDate(merged.loan.firstPaymentDate) ? merged.loan.firstPaymentDate : "2026-07-01";
     merged.loan.gracePeriod = Math.max(0, Math.round(num(merged.loan.gracePeriod)) || 0);
     merged.preferences.reminderDay = clamp(Math.round(num(merged.preferences.reminderDay)) || 1, 1, 28);
     return merged;
@@ -1374,6 +1452,10 @@
       totalInterest: 0,
       totalPrincipal: 0,
       totalEarly: 0,
+      totalFees: 0,
+      installmentFee: 0,
+      totalDuePayment: 0,
+      totalLoanPayments: 0,
       monthsElapsed: 0,
       payoffDate: null,
       nextPaymentDate: null,
@@ -1421,7 +1503,7 @@
     let score = 70;
     const interestRatio = safePercent(current.totalInterest, current.startingPrincipal);
     const budget = num(currentState.loan.monthlyBudget);
-    const budgetRatio = budget > 0 ? safePercent(current.paymentAmount, budget) : 65;
+    const budgetRatio = budget > 0 ? safePercent((current.totalDuePayment || current.paymentAmount), budget) : 65;
 
     if (interestRatio < 20) score += 12;
     if (interestRatio > 45) score -= 15;
@@ -1437,7 +1519,7 @@
   }
 
   function recommendStrategy() {
-    const payment = derived.current.paymentAmount;
+    const payment = derived.current.totalDuePayment || derived.current.paymentAmount;
     if (derived.current.startingPrincipal <= 0) return "ابدأ بإدخال أصل القرض والمدة والفائدة للحصول على توصية دقيقة.";
     if (state.ratePeriods.some((period) => num(period.rate) >= num(state.loan.annualRate) + 2)) {
       return "الأولوية الآن هي تقليل الرصيد قبل أو أثناء فترات الفائدة المرتفعة، لأن كل دينار إضافي هناك يقلل الفائدة المركبة لاحقاً.";
@@ -1499,11 +1581,14 @@
     confirmHandler = null;
   }
 
-  function showToast(message) {
+  function showToast(message, type = "info") {
+    if (!els.toast) return;
     els.toast.textContent = message;
-    els.toast.classList.add("show");
+    els.toast.className = `toast show ${type}`;
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => els.toast.classList.remove("show"), 2400);
+    showToast.timer = setTimeout(() => {
+      els.toast.className = "toast";
+    }, 2800);
   }
 
   function toCSV(rows) {
