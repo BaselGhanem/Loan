@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260625_liked_fee_fix1" />
+  <link rel="stylesheet" href="styles.css?v=20260625_interest_charts_final1" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -27,7 +27,6 @@
         <button class="nav-tab" data-tab="rates">الفوائد المتغيرة</button>
         <button class="nav-tab" data-tab="payments">الدفعات المبكرة</button>
         <button class="nav-tab" data-tab="schedule">جدول السداد</button>
-        <button class="nav-tab" data-tab="scenarios">السيناريوهات</button>
         <button class="nav-tab" data-tab="settings">الإعدادات</button>
       </nav>
 
@@ -230,20 +229,17 @@
             <div class="section-head full-row">
               <div>
                 <p class="eyebrow">Variable Interest Engine</p>
-                <h3>فترات الفائدة</h3>
+                <h3>تغييرات سعر الفائدة</h3>
               </div>
             </div>
             <input type="hidden" id="rateId" />
             <label class="field">
-              <span>تاريخ بداية الفترة</span>
+              <span>تاريخ بداية سعر الفائدة</span>
               <input type="date" id="rateStart" />
             </label>
+            <input type="hidden" id="rateEnd" />
             <label class="field">
-              <span>تاريخ نهاية الفترة</span>
-              <input type="date" id="rateEnd" />
-            </label>
-            <label class="field">
-              <span>نسبة الفائدة السنوية للفترة</span>
+              <span>نسبة الفائدة السنوية الجديدة</span>
               <input type="number" id="rateValue" min="0" step="0.01" inputmode="decimal" />
             </label>
             <label class="field">
@@ -251,7 +247,7 @@
               <input type="text" id="rateNote" autocomplete="off" />
             </label>
             <div class="full-row action-row">
-              <button type="submit" class="btn primary">حفظ فترة الفائدة</button>
+              <button type="submit" class="btn primary">حفظ تغيير الفائدة</button>
               <button type="button" class="btn ghost" id="clearRateFormBtn">إلغاء التعديل</button>
             </div>
           </form>
@@ -269,7 +265,7 @@
                 <thead>
                   <tr>
                     <th>البداية</th>
-                    <th>النهاية</th>
+                    <th>سارية حتى</th>
                     <th>الفائدة</th>
                     <th>الأثر</th>
                     <th>ملاحظة</th>
@@ -393,75 +389,13 @@
         </div>
       </section>
 
-      <section class="tab-panel" id="scenariosPanel" data-panel="scenarios">
-        <div class="scenario-layout">
-          <form class="glass-card form-grid animate-in" id="whatIfForm" novalidate>
-            <div class="section-head full-row">
-              <div>
-                <p class="eyebrow">What-if Simulator</p>
-                <h3>محاكاة قرارات إضافية</h3>
-              </div>
-            </div>
-            <label class="field">
-              <span>دفعة شهرية إضافية</span>
-              <input type="number" id="extraMonthly" min="0" step="0.01" inputmode="decimal" />
-            </label>
-            <label class="field">
-              <span>دفعة مبكرة افتراضية مرة واحدة</span>
-              <input type="number" id="oneTimeAmount" min="0" step="0.01" inputmode="decimal" />
-            </label>
-            <label class="field">
-              <span>تاريخ الدفعة الافتراضية</span>
-              <input type="date" id="oneTimeDate" />
-            </label>
-            <label class="field">
-              <span>نسبة إعادة التمويل</span>
-              <input type="number" id="refinanceRate" min="0" step="0.01" inputmode="decimal" />
-            </label>
-            <label class="field">
-              <span>إضافة إعادة التمويل</span>
-              <input type="number" id="refinanceFees" min="0" step="0.01" inputmode="decimal" />
-            </label>
-            <label class="field">
-              <span>اسم السيناريو</span>
-              <input type="text" id="scenarioName" autocomplete="off" />
-            </label>
-            <div class="full-row action-row">
-              <button type="button" class="btn primary" id="saveScenarioBtn">حفظ السيناريو</button>
-              <button type="button" class="btn ghost" id="cloneScenarioBtn">استنساخ السيناريو الحالي</button>
-            </div>
-          </form>
-
-          <div class="glass-card animate-in">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Scenario Comparison</p>
-                <h3>الأصلية مقابل الحالية مقابل الافتراضية</h3>
-              </div>
-            </div>
-            <canvas id="scenarioChart" height="210"></canvas>
-            <div class="comparison-strip" id="scenarioCards"></div>
-          </div>
-        </div>
-
-        <div class="glass-card animate-in">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Saved Scenarios</p>
-              <h3>السيناريوهات المحفوظة محلياً</h3>
-            </div>
-          </div>
-          <div class="scenario-list" id="scenarioList"></div>
-        </div>
-      </section>
-
       <section class="tab-panel" id="settingsPanel" data-panel="settings">
         <div class="settings-grid">
 
           <section class="glass-card form-grid animate-in">
             <div class="section-head full-row">
               <div>
-                <p class="eyebrow">Installment Add-on</p>
+                <p class="eyebrow">Monthly Add-on</p>
                 <h3>تعديل الإضافة الشهرية داخل القسط</h3>
               </div>
             </div>
@@ -584,6 +518,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260625_liked_fee_fix1"></script>
+  <script src="app.js?v=20260625_interest_charts_final1"></script>
 </body>
 </html>

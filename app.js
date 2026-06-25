@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "basel_ghanem_loan_simulator_v1";
-  const EXPORT_VERSION = "1.1.2-liked-fee-periods";
+  const EXPORT_VERSION = "1.2.0-interest-effective-until-next";
   const MAX_MONTHS = 900;
   const EPS = 0.000001;
 
@@ -70,7 +70,10 @@
 
   function init() {
     cacheElements();
-    if (els.confirmModal) els.confirmModal.hidden = true;
+    if (els.confirmModal) {
+      els.confirmModal.hidden = true;
+      els.confirmModal.setAttribute("hidden", "");
+    }
     applyPreferences();
     bindEvents();
     hydrateForms();
@@ -92,7 +95,7 @@
       "refinanceFees", "scenarioName", "saveScenarioBtn", "cloneScenarioBtn", "scenarioChart", "scenarioCards",
       "scenarioList", "accentColor", "themeMode", "layoutPreference", "reminderDay", "reminderNote",
       "exportJsonBtn", "importJsonInput", "integrityBtn", "integrityBox", "resetDataBtn", "toast",
-      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn", "fabWrap", "fabMenu", "fabMain", "feePeriodForm", "feePeriodId", "feePeriodStart", "feePeriodEnd", "feePeriodAmount", "clearFeePeriodBtn", "feePeriodRows"
+      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn", "feePeriodForm", "feePeriodId", "feePeriodStart", "feePeriodEnd", "feePeriodAmount", "clearFeePeriodBtn", "feePeriodRows", "fabWrap", "fabMenu", "fabMain"
     ];
 
     ids.forEach((id) => {
@@ -163,15 +166,6 @@
 
     bindFabActions();
 
-    [els.extraMonthly, els.oneTimeAmount, els.oneTimeDate, els.refinanceRate, els.refinanceFees, els.scenarioName].forEach((el) => {
-      el.addEventListener("input", renderScenarios);
-      el.addEventListener("change", renderScenarios);
-    });
-
-    els.saveScenarioBtn.addEventListener("click", saveScenario);
-    els.cloneScenarioBtn.addEventListener("click", cloneScenario);
-    els.scenarioList.addEventListener("click", handleScenarioAction);
-
     [els.accentColor, els.themeMode, els.layoutPreference, els.reminderDay, els.reminderNote].forEach((el) => {
       el.addEventListener("input", handlePreferenceInput);
       el.addEventListener("change", handlePreferenceInput);
@@ -193,7 +187,8 @@
     });
 
     window.addEventListener("resize", debounce(() => {
-      renderCharts();
+      renderFeePeriods();
+    renderCharts();
     }, 160));
   }
 
@@ -232,7 +227,7 @@
     const rate = {
       id: els.rateId.value || createId("rate"),
       startDate: els.rateStart.value,
-      endDate: els.rateEnd.value,
+      endDate: addMonths(state.loan.firstPaymentDate || state.loan.startDate || todayISO(), Math.max(1, num(state.loan.termMonths)) - 1),
       rate: num(els.rateValue.value),
       note: els.rateNote.value.trim()
     };
@@ -266,7 +261,7 @@
     if (button.dataset.action === "edit") {
       els.rateId.value = item.id;
       els.rateStart.value = item.startDate;
-      els.rateEnd.value = item.endDate;
+      els.rateEnd.value = item.endDate || "";
       els.rateValue.value = decimalInput(item.rate);
       els.rateNote.value = item.note || "";
       els.rateStart.focus();
@@ -698,12 +693,10 @@
   function getRateForDate(currentState, isoDate, useRatePeriods, fallbackRate) {
     if (!useRatePeriods || currentState.loan.interestType !== "variable") return fallbackRate;
     const date = dateValue(isoDate);
-    const period = currentState.ratePeriods.find((item) => {
-      const start = dateValue(item.startDate);
-      const end = dateValue(item.endDate || "2999-12-31");
-      return date >= start && date <= end;
-    });
-    return period ? num(period.rate) : fallbackRate;
+    const applicable = currentState.ratePeriods
+      .filter((item) => validDate(item.startDate) && dateValue(item.startDate) <= date)
+      .sort((a, b) => dateValue(b.startDate) - dateValue(a.startDate))[0];
+    return applicable ? num(applicable.rate) : fallbackRate;
   }
 
   function renderAll() {
@@ -712,8 +705,6 @@
     renderPayments();
     renderScheduleFilters();
     renderSchedule();
-    renderScenarios();
-    renderFeePeriods();
     renderCharts();
   }
 
@@ -867,22 +858,25 @@
     const base = derived.original;
     const current = derived.current;
     els.rateImpact.innerHTML = comparisonCards([
-      { label: "الخطة الأصلية", value: money(base.totalInterest), hint: `${base.monthsElapsed} شهر` },
-      { label: "بعد فترات الفائدة", value: money(current.totalInterest), hint: `${current.monthsElapsed} شهر` },
+      { label: "بدون تغييرات", value: money(base.totalInterest), hint: `${base.monthsElapsed} شهر` },
+      { label: "بعد تغييرات الفائدة", value: money(current.totalInterest), hint: `${current.monthsElapsed} شهر` },
       { label: "فرق التكلفة", value: money(current.totalInterest - base.totalInterest), hint: current.totalInterest >= base.totalInterest ? "تكلفة إضافية" : "توفير" }
     ]);
 
     if (!state.ratePeriods.length) {
-      els.rateRows.innerHTML = `<tr><td colspan="6">لا توجد فترات فائدة متغيرة. سيتم استخدام الفائدة الأساسية.</td></tr>`;
+      els.rateRows.innerHTML = `<tr><td colspan="6">لا توجد تغييرات فائدة. سيتم استخدام الفائدة الأساسية إلى نهاية القرض.</td></tr>`;
       return;
     }
 
-    els.rateRows.innerHTML = state.ratePeriods.map((period) => {
+    const sorted = [...state.ratePeriods].sort((a, b) => dateValue(a.startDate) - dateValue(b.startDate));
+    els.rateRows.innerHTML = sorted.map((period, index) => {
+      const next = sorted[index + 1];
+      const effectiveUntil = next ? addMonths(next.startDate, -1) : derived.current.payoffDate;
       const delta = num(period.rate) - num(state.loan.annualRate);
       return `
         <tr>
           <td>${dateLabel(period.startDate)}</td>
-          <td>${dateLabel(period.endDate)}</td>
+          <td>${next ? dateLabel(effectiveUntil) : "نهاية القرض"}</td>
           <td>${formatNumber(period.rate, 2)}%</td>
           <td>${delta >= 0 ? "+" : ""}${formatNumber(delta, 2)} نقطة</td>
           <td>${escapeHTML(period.note || "-")}</td>
@@ -977,6 +971,7 @@
   }
 
   function renderScenarios() {
+    if (!els.scenarioCards || !els.scenarioList || !els.scenarioChart) return;
     const whatIf = simulateLoan(state, {
       useRatePeriods: true,
       useEarlyPayments: true,
@@ -1014,18 +1009,18 @@
       `).join("");
     }
 
-    drawScenarioChart(whatIf);
+    if (els.scenarioChart) drawScenarioChart(whatIf);
   }
 
   function renderCharts() {
     drawBalanceChart();
     drawBreakdownChart();
     drawImpactChart();
-    renderScenarios();
   }
 
   function drawBalanceChart() {
-    const data = derived.current.schedule.filter((_, index) => index % Math.max(1, Math.ceil(derived.current.schedule.length / 12)) === 0);
+    const step = Math.max(1, Math.ceil(derived.current.schedule.length / 14));
+    const data = derived.current.schedule.filter((_, index) => index % step === 0 || index === derived.current.schedule.length - 1);
     drawLineChart(els.balanceChart, data.map((row) => row.endingBalance), {
       label: "الرصيد",
       format: moneyShort,
@@ -1047,6 +1042,7 @@
   }
 
   function drawScenarioChart(whatIf) {
+    if (!els.scenarioChart) return;
     const data = [
       { label: "الأصلية", value: derived.original.totalPaid },
       { label: "الحالية", value: derived.current.totalPaid },
@@ -1083,69 +1079,77 @@
       return;
     }
 
-    const padX = 42;
-    const padTop = 20;
-    const padBottom = 26;
-    const min = 0;
+    const padLeft = 52;
+    const padRight = 18;
+    const padTop = 26;
+    const padBottom = 34;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
     const max = Math.max(...values);
+    const min = 0;
     const range = Math.max(EPS, max - min);
-    const plotHeight = height - padTop - padBottom;
-    const plotWidth = width - padX * 2;
+    const accent = getAccent();
 
-    ctx.strokeStyle = "rgba(120, 150, 155, 0.22)";
+    ctx.strokeStyle = "rgba(110, 140, 145, 0.25)";
+    ctx.lineWidth = 1;
     ctx.fillStyle = getMutedColor();
     ctx.font = "11px Almarai, sans-serif";
-    ctx.textAlign = "right";
+    ctx.textAlign = "left";
 
     for (let i = 0; i <= 4; i += 1) {
-      const y = padTop + (plotHeight / 4) * i;
+      const y = padTop + (plotH / 4) * i;
+      const labelValue = max - (max / 4) * i;
       ctx.beginPath();
-      ctx.moveTo(padX, y);
-      ctx.lineTo(width - padX, y);
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(width - padRight, y);
       ctx.stroke();
-      const value = max - ((max / 4) * i);
-      ctx.fillText(options.format ? options.format(value) : formatNumber(value), width - 4, y + 4);
+      ctx.fillText(options.format ? options.format(labelValue) : formatNumber(labelValue, 0), 6, y + 4);
     }
 
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = getAccent();
-    ctx.beginPath();
-    values.forEach((value, index) => {
-      const x = padX + (index / Math.max(1, values.length - 1)) * plotWidth;
-      const y = height - padBottom - ((value - min) / range) * plotHeight;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    const points = values.map((value, index) => ({
+      x: padLeft + (index / Math.max(1, values.length - 1)) * plotW,
+      y: padTop + (1 - ((value - min) / range)) * plotH,
+      value
+    }));
 
     const gradient = ctx.createLinearGradient(0, padTop, 0, height - padBottom);
     gradient.addColorStop(0, `rgba(${accentRGB().join(",")}, 0.22)`);
-    gradient.addColorStop(1, `rgba(${accentRGB().join(",")}, 0.00)`);
-    ctx.lineTo(width - padX, height - padBottom);
-    ctx.lineTo(padX, height - padBottom);
+    gradient.addColorStop(1, `rgba(${accentRGB().join(",")}, 0.02)`);
+
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.lineTo(points[points.length - 1].x, height - padBottom);
+    ctx.lineTo(points[0].x, height - padBottom);
     ctx.closePath();
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    ctx.fillStyle = getMutedColor();
-    ctx.font = "11px Almarai, sans-serif";
-    ctx.textAlign = "center";
-    const labels = options.labels || [];
-    [0, Math.floor((labels.length - 1) / 2), labels.length - 1].forEach((idx) => {
-      if (idx < 0 || !labels[idx]) return;
-      const x = padX + (idx / Math.max(1, labels.length - 1)) * plotWidth;
-      ctx.fillText(labels[idx], x, height - 6);
-    });
-
-    const lastX = padX + plotWidth;
-    const lastY = height - padBottom - ((values[values.length - 1] - min) / range) * plotHeight;
-    ctx.fillStyle = getAccent();
     ctx.beginPath();
-    ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = getMutedColor();
-    ctx.textAlign = "left";
-    ctx.fillText(options.format ? options.format(values[values.length - 1]) : formatNumber(values[values.length - 1]), padX, 14);
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const selected = [0, Math.floor(points.length / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+    selected.forEach((idx) => {
+      const point = points[idx];
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = getMutedColor();
+      ctx.textAlign = "center";
+      ctx.font = "10px Almarai, sans-serif";
+      const label = options.labels?.[idx] || "";
+      ctx.fillText(label, point.x, height - 10);
+      ctx.fillText(options.format ? options.format(point.value) : formatNumber(point.value, 0), point.x, Math.max(12, point.y - 10));
+    });
   }
 
   function drawBars(canvas, data, options = {}) {
@@ -1160,37 +1164,43 @@
       return;
     }
 
-    const pad = 34;
-    const gap = 14;
+    const padLeft = 44;
+    const padRight = 14;
+    const padTop = 24;
+    const padBottom = 34;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
     const max = Math.max(...valid.map((item) => item.value));
-    const chartHeight = height - pad * 2;
-    const barWidth = Math.max(26, (width - pad * 2 - gap * (valid.length - 1)) / valid.length);
+    const gap = 12;
+    const barW = Math.max(28, (plotW - gap * (valid.length - 1)) / valid.length);
 
-    ctx.strokeStyle = "rgba(120, 150, 155, 0.22)";
+    ctx.strokeStyle = "rgba(110, 140, 145, 0.22)";
     ctx.fillStyle = getMutedColor();
     ctx.font = "11px Almarai, sans-serif";
+    ctx.textAlign = "left";
+
     for (let i = 0; i <= 4; i += 1) {
-      const y = 12 + (chartHeight / 4) * i;
+      const y = padTop + (plotH / 4) * i;
       ctx.beginPath();
-      ctx.moveTo(pad, y);
-      ctx.lineTo(width - pad, y);
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(width - padRight, y);
       ctx.stroke();
-      const value = max - ((max / 4) * i);
-      ctx.fillText(moneyShort(value), 8, y + 4);
+      ctx.fillText(moneyShort(max - (max / 4) * i), 6, y + 4);
     }
 
     valid.forEach((item, index) => {
-      const x = pad + index * (barWidth + gap);
-      const barHeight = (item.value / max) * chartHeight;
-      const y = height - pad - barHeight;
-      roundRect(ctx, x, y, barWidth, barHeight, 12);
-      ctx.fillStyle = `rgba(${accentRGB().join(",")}, ${0.56 + index * 0.08})`;
+      const x = padLeft + index * (barW + gap);
+      const h = (item.value / max) * plotH;
+      const y = height - padBottom - h;
+      roundRect(ctx, x, y, barW, h, 10);
+      ctx.fillStyle = `rgba(${accentRGB().join(",")}, ${0.62 + Math.min(index, 4) * 0.06})`;
       ctx.fill();
+
       ctx.fillStyle = getMutedColor();
       ctx.font = "10px Almarai, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(item.label).slice(0, 12), x + barWidth / 2, height - 10);
-      ctx.fillText(moneyShort(item.value), x + barWidth / 2, Math.max(14, y - 6));
+      ctx.fillText(String(item.label).slice(0, 12), x + barW / 2, height - 10);
+      ctx.fillText(moneyShort(item.value), x + barW / 2, Math.max(14, y - 7));
     });
   }
 
@@ -1206,37 +1216,52 @@
       return;
     }
 
-    const pad = 34;
-    const gap = 12;
+    const padLeft = 46;
+    const padRight = 14;
+    const padTop = 28;
+    const padBottom = 34;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
     const max = Math.max(...valid.map((item) => item.a + item.b));
-    const chartHeight = height - pad * 2;
-    const barWidth = Math.max(24, (width - pad * 2 - gap * (valid.length - 1)) / valid.length);
+    const gap = 12;
+    const barW = Math.max(26, (plotW - gap * (valid.length - 1)) / valid.length);
 
     ctx.fillStyle = getMutedColor();
     ctx.font = "11px Almarai, sans-serif";
-    ctx.fillText(`${options.aLabel || "A"} / ${options.bLabel || "B"}`, 8, 14);
+    ctx.textAlign = "left";
+    ctx.fillText(`${options.aLabel || "الأصل"} / ${options.bLabel || "الفائدة"}`, 6, 14);
+
+    ctx.strokeStyle = "rgba(110, 140, 145, 0.22)";
+    for (let i = 0; i <= 4; i += 1) {
+      const y = padTop + (plotH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(width - padRight, y);
+      ctx.stroke();
+    }
 
     valid.forEach((item, index) => {
-      const x = pad + index * (barWidth + gap);
+      const x = padLeft + index * (barW + gap);
       const total = item.a + item.b;
-      const totalHeight = (total / max) * chartHeight;
-      const aHeight = total <= 0 ? 0 : (item.a / total) * totalHeight;
-      const bHeight = totalHeight - aHeight;
-      const aY = height - pad - aHeight;
-      const bY = aY - bHeight;
+      const totalH = (total / max) * plotH;
+      const aH = total <= 0 ? 0 : (item.a / total) * totalH;
+      const bH = totalH - aH;
+      const aY = height - padBottom - aH;
+      const bY = aY - bH;
 
-      ctx.fillStyle = `rgba(${accentRGB().join(",")}, 0.70)`;
-      roundRect(ctx, x, aY, barWidth, aHeight, 10);
+      ctx.fillStyle = `rgba(${accentRGB().join(",")}, 0.72)`;
+      roundRect(ctx, x, aY, barW, aH, 9);
       ctx.fill();
-      ctx.fillStyle = "rgba(183, 121, 31, 0.68)";
-      roundRect(ctx, x, bY, barWidth, bHeight, 10);
+
+      ctx.fillStyle = "rgba(183, 121, 31, 0.72)";
+      roundRect(ctx, x, bY, barW, bH, 9);
       ctx.fill();
 
       ctx.fillStyle = getMutedColor();
       ctx.font = "10px Almarai, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(item.label), x + barWidth / 2, height - 10);
-      ctx.fillText(moneyShort(total), x + barWidth / 2, Math.max(14, bY - 6));
+      ctx.fillText(String(item.label), x + barW / 2, height - 10);
+      ctx.fillText(moneyShort(total), x + barW / 2, Math.max(14, bY - 7));
     });
   }
 
@@ -1330,8 +1355,7 @@
       els.refinanceRate.value = decimalInput(scenario.inputs.refinanceRate);
       els.refinanceFees.value = decimalInput(scenario.inputs.refinanceFees);
       els.scenarioName.value = scenario.name;
-      renderScenarios();
-      showToast("تم تحميل مدخلات السيناريو.");
+        showToast("تم تحميل مدخلات السيناريو.");
     }
 
     if (button.dataset.action === "delete") {
@@ -1569,22 +1593,16 @@
 
 
   function validateRatePeriod(rate, ignoreSelf = false) {
-    if (!validDate(rate.startDate)) return { ok: false, message: "أدخل تاريخ بداية صحيح لفترة الفائدة." };
-    if (!validDate(rate.endDate)) return { ok: false, message: "أدخل تاريخ نهاية صحيح لفترة الفائدة." };
-    if (dateValue(rate.endDate) < dateValue(rate.startDate)) return { ok: false, message: "تاريخ نهاية فترة الفائدة يجب أن يكون بعد البداية." };
+    if (!validDate(rate.startDate)) return { ok: false, message: "أدخل تاريخ بداية صحيح لسعر الفائدة." };
     if (num(rate.rate) < 0) return { ok: false, message: "نسبة الفائدة لا يمكن أن تكون سالبة." };
 
-    const overlap = state.ratePeriods.some((period) => {
+    const duplicateStart = state.ratePeriods.some((period) => {
       if (!ignoreSelf && period.id === rate.id) return false;
       if (ignoreSelf && period === rate) return false;
-      const aStart = dateValue(rate.startDate);
-      const aEnd = dateValue(rate.endDate);
-      const bStart = dateValue(period.startDate);
-      const bEnd = dateValue(period.endDate);
-      return aStart <= bEnd && bStart <= aEnd;
+      return validDate(period.startDate) && monthKey(period.startDate) === monthKey(rate.startDate);
     });
 
-    if (overlap) return { ok: false, message: "لا يمكن حفظ فترات فائدة متداخلة." };
+    if (duplicateStart) return { ok: false, message: "يوجد سعر فائدة مسجل لنفس الشهر. عدّل السجل الموجود بدلاً من إضافة سجل جديد." };
     return { ok: true, message: "" };
   }
 

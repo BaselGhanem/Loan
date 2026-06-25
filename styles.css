@@ -987,8 +987,48 @@ tr.highlight-rate td {
 }
 
 
-/* Hotfix: native hidden must override modal grid display */
+/* Final hotfix: hidden confirmation modal must never display on initial load */
 [hidden],
 .modal-backdrop[hidden] {
   display: none !important;
+}
+
+
+/* final animation refinements */
+.metric-card,
+.chart-card,
+.timeline-card,
+.smart-item,
+.comparison-card,
+.family-card {
+  animation: softRise 420ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.nav-tab,
+.btn,
+.icon-btn,
+.fab-main,
+.fab-menu button {
+  will-change: transform;
+}
+
+.nav-tab:active,
+.btn:active,
+.icon-btn:active,
+.fab-main:active {
+  transform: scale(0.985);
+}
+
+canvas {
+  animation: chartReveal 520ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes softRise {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes chartReveal {
+  from { opacity: 0; filter: blur(4px); transform: translateY(8px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
 }
