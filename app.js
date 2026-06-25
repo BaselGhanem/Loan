@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "basel_ghanem_loan_simulator_v1";
-  const EXPORT_VERSION = "1.1.0";
+  const EXPORT_VERSION = "1.1.2-liked-fee-periods";
   const MAX_MONTHS = 900;
   const EPS = 0.000001;
 
@@ -32,10 +32,13 @@
       paymentFrequency: "monthly",
       gracePeriod: 0,
       monthlyBudget: 0,
-      loanNotes: "القسط الأساسي 433.13 د.أ ورسوم شهرية 1.87 د.أ، ليصبح الإجمالي 435 د.أ تقريباً."
+      loanNotes: "القسط الشهري الظاهر 435 د.أ تقريباً."
     },
     ratePeriods: [],
     earlyPayments: [],
+    feePeriods: [
+      { id: "addon_default", startDate: "2026-07-01", endDate: "2041-06-01", amount: 1.87 }
+    ],
     scenarios: [],
     preferences: {
       accentColor: "#099999",
@@ -67,6 +70,7 @@
 
   function init() {
     cacheElements();
+    if (els.confirmModal) els.confirmModal.hidden = true;
     applyPreferences();
     bindEvents();
     hydrateForms();
@@ -88,7 +92,7 @@
       "refinanceFees", "scenarioName", "saveScenarioBtn", "cloneScenarioBtn", "scenarioChart", "scenarioCards",
       "scenarioList", "accentColor", "themeMode", "layoutPreference", "reminderDay", "reminderNote",
       "exportJsonBtn", "importJsonInput", "integrityBtn", "integrityBox", "resetDataBtn", "toast",
-      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn", "fabWrap", "fabMenu", "fabMain"
+      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn", "fabWrap", "fabMenu", "fabMain", "feePeriodForm", "feePeriodId", "feePeriodStart", "feePeriodEnd", "feePeriodAmount", "clearFeePeriodBtn", "feePeriodRows"
     ];
 
     ids.forEach((id) => {
@@ -177,6 +181,10 @@
     els.importJsonInput.addEventListener("change", importJSONBackup);
     els.integrityBtn.addEventListener("click", runIntegrityCheck);
     els.resetDataBtn.addEventListener("click", requestReset);
+
+    if (els.feePeriodForm) els.feePeriodForm.addEventListener("submit", handleFeePeriodSubmit);
+    if (els.clearFeePeriodBtn) els.clearFeePeriodBtn.addEventListener("click", clearFeePeriodForm);
+    if (els.feePeriodRows) els.feePeriodRows.addEventListener("click", handleFeePeriodAction);
 
     els.modalCancelBtn.addEventListener("click", closeConfirm);
     els.modalConfirmBtn.addEventListener("click", () => {
@@ -498,7 +506,7 @@
       : addMonths(startDate, Math.max(1, periodMonths + Math.max(0, Math.round(num(loan.gracePeriod)) || 0) - 1));
     const termMonths = Math.max(1, Math.round(num(loan.termMonths)) || 1);
     const baseRate = Math.max(0, num(loan.annualRate));
-    const feePerInstallment = Math.max(0, num(loan.installmentFee));
+    const fallbackAddon = Math.max(0, num(loan.installmentFee));
     const customInstallment = Math.max(0, num(loan.customInstallment));
     const startBalance = principal + (options.refinance?.fees || 0);
     const schedule = [];
@@ -560,7 +568,7 @@
         scheduledBase += num(options.extraMonthly) * (periodMonths === 3 ? 3 : 1);
       }
       scheduledBase = Math.min(balance, scheduledBase);
-      const installmentFee = scheduledBase > 0 ? feePerInstallment : 0;
+      const installmentFee = scheduledBase > 0 ? getInstallmentAddonForDate(date, currentState, fallbackAddon) : 0;
       const scheduledTotal = scheduledBase + installmentFee;
       const principalPaid = Math.max(0, scheduledBase - interest);
       balance -= scheduledBase;
@@ -705,6 +713,7 @@
     renderScheduleFilters();
     renderSchedule();
     renderScenarios();
+    renderFeePeriods();
     renderCharts();
   }
 
@@ -724,11 +733,10 @@
     els.nextPaymentDate.textContent = `الدفعة القادمة: ${live.nextPaymentDate ? dateLabel(live.nextPaymentDate) : "مكتمل"}`;
     els.loanHealth.textContent = `مؤشر الصحة: ${derived.health.label} (${derived.health.score}/100)`;
 
-    const fullMonthly = (num(state.loan.customInstallment) || current.paymentAmount) + num(state.loan.installmentFee);
+    const fullMonthly = (num(state.loan.customInstallment) || current.paymentAmount) + getInstallmentAddonForDate(live.nextPaymentDate || state.loan.firstPaymentDate || todayISO());
     const cards = [
-      { label: "القسط الشهري الإجمالي", value: money(fullMonthly), hint: `${money(num(state.loan.customInstallment) || current.paymentAmount)} قسط + ${money(num(state.loan.installmentFee))} رسوم` },
+      { label: "القسط الشهري", value: money(fullMonthly), hint: "القيمة الظاهرة للقسط الشهري تقريباً" },
       { label: "إجمالي الفائدة", value: money(current.totalInterest), hint: `الخطة الأصلية: ${money(original.totalInterest)}` },
-      { label: "إجمالي الرسوم", value: money(current.totalFees), hint: `${money(num(state.loan.installmentFee))} على كل قسط` },
       { label: "المبلغ المدفوع حتى اليوم", value: money(live.totalPaid), hint: `يشمل الأقساط والدفعات المبكرة حتى ${dateLabel(todayISO())}` },
       { label: "الأشهر المتبقية", value: `${Math.max(0, live.remainingMonths)} شهر`, hint: `حتى ${dateLabel(current.payoffDate)}` },
       { label: "كان المفترض ينتهي", value: dateLabel(original.payoffDate), hint: `الخطة الأساسية بدون دفعات مبكرة` },
@@ -957,7 +965,6 @@
           <td>${dateLabel(row.date)}</td>
           <td>${money(row.startingBalance)}</td>
           <td>${money(row.installment)}</td>
-          <td>${money(row.installmentFee)}</td>
           <td>${money(row.principalPaid)}</td>
           <td>${money(row.interestPaid)}</td>
           <td>${money(row.earlyPayment)}</td>
@@ -1413,13 +1420,12 @@
   }
 
   function exportScheduleCSV() {
-    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Installment Fee", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
+    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
     const rows = derived.current.schedule.map((row) => [
       row.number,
       row.date,
       fixed(row.startingBalance),
       fixed(row.installment),
-      fixed(row.installmentFee),
       fixed(row.principalPaid),
       fixed(row.interestPaid),
       fixed(row.earlyPayment),
@@ -1433,6 +1439,134 @@
     autoSave();
     showToast("تم تصدير جدول السداد بصيغة CSV متوافقة مع Excel.");
   }
+
+
+  function clearFeePeriodForm() {
+    if (!els.feePeriodId) return;
+    els.feePeriodId.value = "";
+    els.feePeriodStart.value = "";
+    els.feePeriodEnd.value = "";
+    els.feePeriodAmount.value = "";
+  }
+
+  function handleFeePeriodSubmit(event) {
+    event.preventDefault();
+    const item = {
+      id: els.feePeriodId.value || createId("addon"),
+      startDate: els.feePeriodStart.value,
+      endDate: els.feePeriodEnd.value,
+      amount: num(els.feePeriodAmount.value)
+    };
+
+    const validation = validateFeePeriod(item);
+    if (!validation.ok) {
+      showToast(validation.message);
+      return;
+    }
+
+    const index = state.feePeriods.findIndex((period) => period.id === item.id);
+    if (index >= 0) state.feePeriods[index] = item;
+    else state.feePeriods.push(item);
+
+    state.feePeriods = normalizeFeePeriods(state.feePeriods, state.loan);
+    clearFeePeriodForm();
+    autoSaveAndRecalc();
+    showToast("تم حفظ الفترة وتحديث القسط.");
+  }
+
+  function handleFeePeriodAction(event) {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    const id = button.dataset.id;
+    const item = state.feePeriods.find((period) => period.id === id);
+    if (!item) return;
+
+    if (button.dataset.action === "edit") {
+      els.feePeriodId.value = item.id;
+      els.feePeriodStart.value = item.startDate;
+      els.feePeriodEnd.value = item.endDate;
+      els.feePeriodAmount.value = decimalInput(item.amount);
+      els.feePeriodAmount.focus();
+    }
+
+    if (button.dataset.action === "delete") {
+      openConfirm("سيتم حذف هذه الفترة وإعادة احتساب القسط.", () => {
+        state.feePeriods = state.feePeriods.filter((period) => period.id !== id);
+        state.feePeriods = normalizeFeePeriods(state.feePeriods, state.loan);
+        autoSaveAndRecalc();
+        showToast("تم حذف الفترة.");
+      });
+    }
+  }
+
+  function renderFeePeriods() {
+    if (!els.feePeriodRows) return;
+    state.feePeriods = normalizeFeePeriods(state.feePeriods, state.loan);
+
+    if (!state.feePeriods.length) {
+      els.feePeriodRows.innerHTML = `<tr><td colspan="4">لا توجد فترات حالياً.</td></tr>`;
+      return;
+    }
+
+    els.feePeriodRows.innerHTML = state.feePeriods.map((period) => `
+      <tr>
+        <td>${dateLabel(period.startDate)}</td>
+        <td>${dateLabel(period.endDate)}</td>
+        <td>${money(period.amount)}</td>
+        <td>
+          <span class="row-actions">
+            <button class="icon-btn" data-action="edit" data-id="${period.id}">تعديل</button>
+            <button class="icon-btn" data-action="delete" data-id="${period.id}">حذف</button>
+          </span>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  function validateFeePeriod(item) {
+    if (!validDate(item.startDate)) return { ok: false, message: "أدخل تاريخ بداية صحيح." };
+    if (!validDate(item.endDate)) return { ok: false, message: "أدخل تاريخ نهاية صحيح." };
+    if (dateValue(item.endDate) < dateValue(item.startDate)) return { ok: false, message: "تاريخ النهاية يجب أن يكون بعد البداية." };
+    if (num(item.amount) < 0) return { ok: false, message: "القيمة لا يمكن أن تكون سالبة." };
+
+    const overlap = state.feePeriods.some((period) => {
+      if (period.id === item.id) return false;
+      return dateValue(item.startDate) <= dateValue(period.endDate) && dateValue(period.startDate) <= dateValue(item.endDate);
+    });
+
+    if (overlap) return { ok: false, message: "لا يمكن حفظ فترات متداخلة." };
+    return { ok: true, message: "" };
+  }
+
+  function normalizeFeePeriods(periods, loan = state.loan) {
+    const normalized = (Array.isArray(periods) ? periods : [])
+      .map((period) => ({
+        id: period.id || createId("addon"),
+        startDate: validDate(period.startDate) ? period.startDate : (loan.firstPaymentDate || "2026-07-01"),
+        endDate: validDate(period.endDate) ? period.endDate : addMonths(loan.firstPaymentDate || "2026-07-01", Math.max(1, num(loan.termMonths)) - 1),
+        amount: Math.max(0, num(period.amount))
+      }))
+      .sort((a, b) => dateValue(a.startDate) - dateValue(b.startDate));
+
+    if (!normalized.length) {
+      normalized.push({
+        id: "addon_default",
+        startDate: loan.firstPaymentDate || "2026-07-01",
+        endDate: addMonths(loan.firstPaymentDate || "2026-07-01", Math.max(1, num(loan.termMonths)) - 1),
+        amount: Math.max(0, num(loan.installmentFee) || 1.87)
+      });
+    }
+
+    return normalized;
+  }
+
+  function getInstallmentAddonForDate(isoDate, currentState = state, fallback = 1.87) {
+    const date = validDate(isoDate) ? isoDate : (currentState.loan.firstPaymentDate || todayISO());
+    const periods = normalizeFeePeriods(currentState.feePeriods, currentState.loan);
+    const found = periods.find((period) => dateValue(date) >= dateValue(period.startDate) && dateValue(date) <= dateValue(period.endDate));
+    return found ? Math.max(0, num(found.amount)) : Math.max(0, num(fallback));
+  }
+
 
   function validateRatePeriod(rate, ignoreSelf = false) {
     if (!validDate(rate.startDate)) return { ok: false, message: "أدخل تاريخ بداية صحيح لفترة الفائدة." };
@@ -1523,6 +1657,7 @@
       filters: { ...base.filters, ...(input.filters || {}) },
       ratePeriods: Array.isArray(input.ratePeriods) ? input.ratePeriods : [],
       earlyPayments: Array.isArray(input.earlyPayments) ? input.earlyPayments : [],
+      feePeriods: Array.isArray(input.feePeriods) ? input.feePeriods : [],
       scenarios: Array.isArray(input.scenarios) ? input.scenarios : [],
       exportHistory: Array.isArray(input.exportHistory) ? input.exportHistory : [],
       amortizationSchedule: Array.isArray(input.amortizationSchedule) ? input.amortizationSchedule : [],
@@ -1545,6 +1680,7 @@
     if (merged.loan.termMonths <= 1) merged.loan.termMonths = 180;
     if (merged.loan.customInstallment <= 0) merged.loan.customInstallment = 433.13;
     if (merged.loan.installmentFee < 0.01) merged.loan.installmentFee = 1.87;
+    merged.feePeriods = normalizeFeePeriods(merged.feePeriods, merged.loan);
     merged.preferences.reminderDay = clamp(Math.round(num(merged.preferences.reminderDay)) || 1, 1, 28);
     return merged;
   }
@@ -1728,10 +1864,14 @@
     confirmHandler = onConfirm;
     els.modalMessage.textContent = message;
     els.confirmModal.hidden = false;
+    els.confirmModal.removeAttribute("hidden");
   }
 
   function closeConfirm() {
-    els.confirmModal.hidden = true;
+    if (els.confirmModal) {
+      els.confirmModal.hidden = true;
+      els.confirmModal.setAttribute("hidden", "");
+    }
     confirmHandler = null;
   }
 

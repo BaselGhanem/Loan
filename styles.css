@@ -985,3 +985,10 @@ tr.highlight-rate td {
     margin-bottom: 14px;
   }
 }
+
+
+/* Hotfix: native hidden must override modal grid display */
+[hidden],
+.modal-backdrop[hidden] {
+  display: none !important;
+}

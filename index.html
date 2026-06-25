@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260625_loan_fix3" />
+  <link rel="stylesheet" href="styles.css?v=20260625_liked_fee_fix1" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -42,7 +42,7 @@
         <div>
           <p class="eyebrow">لوحة Basel Ghanem الشخصية</p>
           <h2 id="welcomeTitle">أهلاً Basel، هذه لوحة بسيطة لمتابعة قرضك.</h2>
-          <p id="heroInsight" class="hero-copy">القسط الأساسي 433.13 د.أ + رسوم 1.87 د.أ = 435 د.أ. عدّل أي رقم وسترى الأثر مباشرة.</p>
+          <p id="heroInsight" class="hero-copy">القسط الشهري الظاهر 435 د.أ تقريباً. عدّل أي رقم وسترى الأثر مباشرة.</p>
         </div>
         <div class="hero-actions">
           <button class="btn ghost" id="printReportBtn">تقرير PDF / طباعة</button>
@@ -194,10 +194,7 @@
             <span>القسط الشهري المثبت</span>
             <input type="number" id="customInstallment" min="0" step="0.01" inputmode="decimal" />
           </label>
-          <label class="field">
-            <span>رسوم على كل قسط</span>
-            <input type="number" id="installmentFee" min="0" step="0.01" inputmode="decimal" />
-          </label>
+          <input type="hidden" id="installmentFee" />
           <label class="field">
             <span>نوع الفائدة</span>
             <select id="interestType">
@@ -382,7 +379,6 @@
                   <th>التاريخ</th>
                   <th>رصيد البداية</th>
                   <th>القسط الإجمالي</th>
-                  <th>رسوم القسط</th>
                   <th>الأصل المدفوع</th>
                   <th>الفائدة</th>
                   <th>دفعة مبكرة</th>
@@ -423,7 +419,7 @@
               <input type="number" id="refinanceRate" min="0" step="0.01" inputmode="decimal" />
             </label>
             <label class="field">
-              <span>رسوم إعادة التمويل</span>
+              <span>إضافة إعادة التمويل</span>
               <input type="number" id="refinanceFees" min="0" step="0.01" inputmode="decimal" />
             </label>
             <label class="field">
@@ -461,6 +457,51 @@
 
       <section class="tab-panel" id="settingsPanel" data-panel="settings">
         <div class="settings-grid">
+
+          <section class="glass-card form-grid animate-in">
+            <div class="section-head full-row">
+              <div>
+                <p class="eyebrow">Installment Add-on</p>
+                <h3>تعديل الإضافة الشهرية داخل القسط</h3>
+              </div>
+            </div>
+            <form class="form-grid full-row" id="feePeriodForm" novalidate>
+              <input type="hidden" id="feePeriodId" />
+              <label class="field">
+                <span>من تاريخ</span>
+                <input type="date" id="feePeriodStart" />
+              </label>
+              <label class="field">
+                <span>إلى تاريخ</span>
+                <input type="date" id="feePeriodEnd" />
+              </label>
+              <label class="field">
+                <span>قيمة الإضافة الشهرية</span>
+                <input type="number" id="feePeriodAmount" min="0" step="0.01" inputmode="decimal" />
+              </label>
+              <div class="field">
+                <span>&nbsp;</span>
+                <div class="action-row">
+                  <button type="submit" class="btn primary">حفظ الفترة</button>
+                  <button type="button" class="btn ghost" id="clearFeePeriodBtn">إلغاء</button>
+                </div>
+              </div>
+            </form>
+            <div class="responsive-table full-row">
+              <table>
+                <thead>
+                  <tr>
+                    <th>من</th>
+                    <th>إلى</th>
+                    <th>القيمة</th>
+                    <th>إجراء</th>
+                  </tr>
+                </thead>
+                <tbody id="feePeriodRows"></tbody>
+              </table>
+            </div>
+          </section>
+
           <section class="glass-card form-grid animate-in">
             <div class="section-head full-row">
               <div>
@@ -543,6 +584,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260625_loan_fix3"></script>
+  <script src="app.js?v=20260625_liked_fee_fix1"></script>
 </body>
 </html>
