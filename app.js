@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "basel_ghanem_loan_simulator_v3_personal_fixed_loan";
+  const STORAGE_KEY = "basel_ghanem_loan_simulator_v1";
   const EXPORT_VERSION = "1.1.0";
   const MAX_MONTHS = 900;
   const EPS = 0.000001;
@@ -9,11 +9,17 @@
   const defaultState = () => ({
     version: EXPORT_VERSION,
     profile: {
-      ownerName: "Basel Ghanem"
+      ownerName: "Basel Ghanem",
+      family: [
+        { name: "Basel", relation: "أنت", birthDate: "1991-09-02" },
+        { name: "الزوجة", relation: "الزوجة", birthDate: "1992-09-16" },
+        { name: "موسى", relation: "الابن", birthDate: "2021-10-21" },
+        { name: "ليلى", relation: "الابنة", birthDate: "2024-07-21" }
+      ]
     },
     loan: {
       loanName: "قرض Basel الشخصي",
-      assetPrice: 51000,
+      assetPrice: 0,
       downPayment: 0,
       principal: 51000,
       startDate: "2026-06-01",
@@ -26,7 +32,7 @@
       paymentFrequency: "monthly",
       gracePeriod: 0,
       monthlyBudget: 0,
-      loanNotes: "القسط المحسوب 433.13 د.أ + رسوم شهرية 1.87 د.أ = 435 د.أ."
+      loanNotes: "القسط الأساسي 433.13 د.أ ورسوم شهرية 1.87 د.أ، ليصبح الإجمالي 435 د.أ تقريباً."
     },
     ratePeriods: [],
     earlyPayments: [],
@@ -61,31 +67,28 @@
 
   function init() {
     cacheElements();
-    applyDeviceClass();
     applyPreferences();
     bindEvents();
     hydrateForms();
     setActiveTab(state.lastOpenedTab || "dashboard");
     recalculateAndRender();
-    showToast("تم تحميل بيانات قرض Basel: القسط 433.13 + رسوم 1.87 = 435 د.أ.", "success");
   }
 
   function cacheElements() {
     const ids = [
       "appShell", "navTabs", "saveState", "welcomeTitle", "heroInsight", "remainingBalance", "progressRing",
       "completionPct", "payoffDate", "nextPaymentDate", "loanHealth", "kpiGrid", "balanceChart",
-      "breakdownChart", "smartInsights", "timeline", "loanForm", "loanName", "assetPrice", "downPayment",
-      "principal", "startDate", "firstPaymentDate", "termMonths", "termYears", "annualRate", "customInstallment",
-      "installmentFee", "interestType", "paymentFrequency", "gracePeriod", "monthlyBudget", "loanNotes", "syncPrincipalBtn", "rateForm", "rateId", "rateStart",
+      "breakdownChart", "smartInsights", "familyCards", "timeline", "loanForm", "loanName", "assetPrice", "downPayment",
+      "principal", "startDate", "firstPaymentDate", "termMonths", "termYears", "annualRate", "customInstallment", "installmentFee", "interestType", "paymentFrequency",
+      "gracePeriod", "monthlyBudget", "loanNotes", "syncPrincipalBtn", "rateForm", "rateId", "rateStart",
       "rateEnd", "rateValue", "rateNote", "clearRateFormBtn", "rateImpact", "rateRows", "earlyPaymentForm",
-      "paymentId", "paymentDate", "paymentAmount", "paymentMethod", "paymentNote", "clearPaymentFormBtn",
+      "paymentId", "paymentDate", "paymentAmount", "paymentMethod", "paymentRepeatType", "paymentRepeatMonths", "paymentNote", "clearPaymentFormBtn",
       "paymentImpact", "paymentRows", "impactChart", "yearFilter", "scheduleSearch", "exportCsvBtn",
       "scheduleRows", "whatIfForm", "extraMonthly", "oneTimeAmount", "oneTimeDate", "refinanceRate",
       "refinanceFees", "scenarioName", "saveScenarioBtn", "cloneScenarioBtn", "scenarioChart", "scenarioCards",
       "scenarioList", "accentColor", "themeMode", "layoutPreference", "reminderDay", "reminderNote",
       "exportJsonBtn", "importJsonInput", "integrityBtn", "integrityBox", "resetDataBtn", "toast",
-      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn",
-      "fabWrap", "fabMain", "fabMenu"
+      "confirmModal", "modalMessage", "modalConfirmBtn", "modalCancelBtn", "printReportBtn", "quickPaymentBtn", "fabWrap", "fabMenu", "fabMain"
     ];
 
     ids.forEach((id) => {
@@ -97,7 +100,9 @@
     els.navTabs.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-tab]");
       if (!btn) return;
-      goToTab(btn.dataset.tab);
+      setActiveTab(btn.dataset.tab);
+      state.lastOpenedTab = btn.dataset.tab;
+      autoSave();
     });
 
     els.loanForm.addEventListener("input", handleLoanInput);
@@ -143,24 +148,16 @@
     els.exportCsvBtn.addEventListener("click", exportScheduleCSV);
     els.printReportBtn.addEventListener("click", () => window.print());
     els.quickPaymentBtn.addEventListener("click", () => {
-      goToTab("payments");
+      setActiveTab("payments");
       els.paymentAmount.focus();
     });
 
-    els.fabMain?.addEventListener("click", () => {
-      els.fabWrap?.classList.toggle("open");
-      els.fabMain?.setAttribute("aria-expanded", String(els.fabWrap?.classList.contains("open")));
+    els.paymentRepeatType.addEventListener("change", () => {
+      const repeated = els.paymentRepeatType.value === "monthly";
+      els.paymentRepeatMonths.closest("label").style.display = repeated ? "grid" : "none";
     });
 
-    els.fabMenu?.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-fab-tab], [data-fab-action]");
-      if (!btn) return;
-      els.fabWrap?.classList.remove("open");
-      els.fabMain?.setAttribute("aria-expanded", "false");
-      if (btn.dataset.fabTab) goToTab(btn.dataset.fabTab);
-      if (btn.dataset.fabAction === "print") window.print();
-      if (btn.dataset.fabAction === "backup") exportJSONBackup();
-    });
+    bindFabActions();
 
     [els.extraMonthly, els.oneTimeAmount, els.oneTimeDate, els.refinanceRate, els.refinanceFees, els.scenarioName].forEach((el) => {
       el.addEventListener("input", renderScenarios);
@@ -188,7 +185,6 @@
     });
 
     window.addEventListener("resize", debounce(() => {
-      applyDeviceClass();
       renderCharts();
     }, 160));
   }
@@ -197,7 +193,7 @@
     const key = event.target.id;
     if (!(key in state.loan)) return;
 
-    if (["assetPrice", "downPayment", "principal", "annualRate", "customInstallment", "installmentFee", "gracePeriod", "monthlyBudget"].includes(key)) {
+    if (["assetPrice", "downPayment", "principal", "annualRate", "gracePeriod", "monthlyBudget", "customInstallment", "installmentFee"].includes(key)) {
       state.loan[key] = num(event.target.value);
     } else if (key === "termMonths") {
       state.loan.termMonths = Math.max(1, Math.round(num(event.target.value)) || 1);
@@ -279,17 +275,45 @@
 
   function handleEarlyPaymentSubmit(event) {
     event.preventDefault();
+    const existingPayment = state.earlyPayments.find((item) => item.id === els.paymentId.value);
     const payment = {
       id: els.paymentId.value || createId("payment"),
       date: els.paymentDate.value,
       amount: num(els.paymentAmount.value),
       method: els.paymentMethod.value,
-      note: els.paymentNote.value.trim()
+      note: els.paymentNote.value.trim(),
+      groupId: existingPayment?.groupId || null,
+      occurrenceIndex: existingPayment?.occurrenceIndex || null,
+      occurrenceCount: existingPayment?.occurrenceCount || null
     };
 
     const validation = validateEarlyPayment(payment);
     if (!validation.ok) {
       showToast(validation.message);
+      return;
+    }
+
+    const isRecurringNew = !els.paymentId.value && els.paymentRepeatType?.value === "monthly";
+    const repeatMonths = Math.max(1, Math.round(num(els.paymentRepeatMonths?.value)) || 1);
+
+    if (isRecurringNew) {
+      const groupId = createId("repeat");
+      const generated = [];
+      for (let i = 0; i < repeatMonths; i += 1) {
+        generated.push({
+          ...payment,
+          id: createId("payment"),
+          date: addMonths(payment.date, i),
+          groupId,
+          occurrenceIndex: i + 1,
+          occurrenceCount: repeatMonths
+        });
+      }
+      state.earlyPayments.push(...generated);
+      state.earlyPayments.sort((a, b) => dateValue(a.date) - dateValue(b.date));
+      clearPaymentForm();
+      autoSaveAndRecalc();
+      showToast(`تم إنشاء ${repeatMonths} دفعة متكررة بنجاح.`);
       return;
     }
 
@@ -318,8 +342,12 @@
       els.paymentDate.value = item.date;
       els.paymentAmount.value = decimalInput(item.amount);
       els.paymentMethod.value = item.method;
+      if (els.paymentRepeatType) els.paymentRepeatType.value = "single";
+      if (els.paymentRepeatMonths) els.paymentRepeatMonths.value = "";
+      if (els.paymentRepeatMonths?.closest("label")) els.paymentRepeatMonths.closest("label").style.display = "none";
       els.paymentNote.value = item.note || "";
       els.paymentAmount.focus();
+      if (item.groupId) showToast("أنت تعدل هذه الدفعة فقط من السلسلة المتكررة.");
     }
 
     if (button.dataset.action === "delete") {
@@ -329,29 +357,21 @@
         showToast("تم حذف الدفعة المبكرة.");
       });
     }
+
+    if (button.dataset.action === "deleteGroup") {
+      const groupId = button.dataset.group;
+      openConfirm("سيتم حذف جميع الدفعات التابعة لهذه السلسلة المتكررة.", () => {
+        state.earlyPayments = state.earlyPayments.filter((payment) => payment.groupId !== groupId);
+        autoSaveAndRecalc();
+        showToast("تم حذف السلسلة المتكررة.");
+      });
+    }
   }
 
   function setActiveTab(tab) {
     const safeTab = document.querySelector(`[data-panel="${tab}"]`) ? tab : "dashboard";
     document.querySelectorAll(".nav-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === safeTab));
     document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === safeTab));
-  }
-
-  function goToTab(tab) {
-    setActiveTab(tab);
-    state.lastOpenedTab = tab;
-    autoSave();
-    const labels = {
-      dashboard: "لوحة التحكم",
-      loan: "بيانات القرض",
-      rates: "الفوائد المتغيرة",
-      payments: "الدفعات المبكرة",
-      schedule: "جدول السداد",
-      scenarios: "السيناريوهات",
-      settings: "الإعدادات"
-    };
-    showToast(`تم فتح ${labels[tab] || "القسم المطلوب"}.`, "info");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function hydrateForms() {
@@ -364,7 +384,8 @@
       if (els[key]) els[key].value = value ?? "";
     });
 
-    els.oneTimeDate.value = addMonths(state.loan.startDate || todayISO(), 3);
+    els.oneTimeDate.value = addMonths(state.loan.firstPaymentDate || state.loan.startDate || todayISO(), 3);
+    if (els.paymentRepeatMonths?.closest("label")) els.paymentRepeatMonths.closest("label").style.display = els.paymentRepeatType?.value === "monthly" ? "grid" : "none";
     els.refinanceRate.value = decimalInput(Math.max(0, num(state.loan.annualRate) - 1));
   }
 
@@ -381,6 +402,9 @@
     els.paymentDate.value = "";
     els.paymentAmount.value = "";
     els.paymentMethod.value = "reduceTerm";
+    if (els.paymentRepeatType) els.paymentRepeatType.value = "single";
+    if (els.paymentRepeatMonths) els.paymentRepeatMonths.value = "";
+    if (els.paymentRepeatMonths?.closest("label")) els.paymentRepeatMonths.closest("label").style.display = "none";
     els.paymentNote.value = "";
   }
 
@@ -391,8 +415,8 @@
       number: row.number,
       date: row.date,
       installment: row.installment,
-      loanPayment: row.loanPayment,
       installmentFee: row.installmentFee,
+      installmentBase: row.installmentBase,
       principalPaid: row.principalPaid,
       interestPaid: row.interestPaid,
       earlyPayment: row.earlyPayment,
@@ -404,9 +428,6 @@
       calculatedAt: derived.generatedAt,
       remainingBalance: derived.current.remainingBalance,
       paymentAmount: derived.current.paymentAmount,
-      totalDuePayment: derived.current.totalDuePayment,
-      installmentFee: derived.current.installmentFee,
-      totalFees: derived.current.totalFees,
       totalInterest: derived.current.totalInterest,
       totalPaid: derived.current.totalPaid,
       payoffDate: derived.current.payoffDate,
@@ -434,7 +455,7 @@
     });
 
     const oneTimeAmount = num(els.oneTimeAmount?.value);
-    const oneTimeDate = els.oneTimeDate?.value || addMonths(currentState.loan.startDate || todayISO(), 3);
+    const oneTimeDate = els.oneTimeDate?.value || addMonths(currentState.loan.firstPaymentDate || currentState.loan.startDate || todayISO(), 3);
     const refinanceRate = num(els.refinanceRate?.value);
     const refinanceFees = num(els.refinanceFees?.value);
 
@@ -448,7 +469,9 @@
 
     const interestSaved = original.totalInterest - current.totalInterest;
     const monthsSaved = original.monthsElapsed - current.monthsElapsed;
-    const completion = safePercent(Math.max(0, original.startingPrincipal - current.remainingBalance), original.startingPrincipal);
+    const liveOriginal = getLiveSnapshot(original);
+    const liveCurrent = getLiveSnapshot(current);
+    const completion = liveCurrent.completion;
     const health = calculateHealthScore(currentState, current, original, interestSaved, monthsSaved);
 
     return {
@@ -457,6 +480,8 @@
       whatIf,
       interestSaved,
       monthsSaved,
+      liveOriginal,
+      liveCurrent,
       completion,
       health,
       generatedAt: new Date().toISOString()
@@ -466,14 +491,15 @@
   function simulateLoan(currentState, options = {}) {
     const loan = currentState.loan;
     const periodMonths = loan.paymentFrequency === "quarterly" ? 3 : 1;
-    const principal = Math.max(0, num(loan.principal) || (num(loan.assetPrice) - num(loan.downPayment)));
+    const principal = Math.max(0, num(loan.principal) || Math.max(0, num(loan.assetPrice) - num(loan.downPayment)));
     const startDate = validDate(loan.startDate) ? loan.startDate : todayISO();
+    const paymentStartDate = validDate(loan.firstPaymentDate)
+      ? loan.firstPaymentDate
+      : addMonths(startDate, Math.max(1, periodMonths + Math.max(0, Math.round(num(loan.gracePeriod)) || 0) - 1));
     const termMonths = Math.max(1, Math.round(num(loan.termMonths)) || 1);
-    const gracePeriod = Math.max(0, Math.round(num(loan.gracePeriod)) || 0);
     const baseRate = Math.max(0, num(loan.annualRate));
-    const installmentFee = Math.max(0, num(loan.installmentFee));
+    const feePerInstallment = Math.max(0, num(loan.installmentFee));
     const customInstallment = Math.max(0, num(loan.customInstallment));
-    const hasCustomInstallment = customInstallment > EPS;
     const startBalance = principal + (options.refinance?.fees || 0);
     const schedule = [];
     const earlyPaymentMap = buildEarlyPaymentMap(currentState, options);
@@ -483,20 +509,14 @@
     let totalInterest = 0;
     let totalPrincipal = 0;
     let totalEarly = 0;
+    let totalFees = 0;
     let monthsElapsed = 0;
-    const configuredFirstPaymentDate = validDate(loan.firstPaymentDate) ? loan.firstPaymentDate : "";
-    let firstPaymentDate = configuredFirstPaymentDate || addMonths(startDate, gracePeriod + periodMonths);
     let currentRate = options.refinance?.rate || baseRate;
-    let currentPeriodPayment = 0;
-    let loanPaid = principal <= EPS;
+    let currentPeriodPayment = customInstallment > 0 ? customInstallment : calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
     let rateChangeCount = 0;
     let previousAppliedRate = null;
-    let rateChangedThisMonth = false;
 
-    const originalPayment = hasCustomInstallment ? customInstallment : calculatePeriodicPayment(startBalance, currentRate, termMonths, periodMonths);
-    currentPeriodPayment = originalPayment;
-
-    if (loanPaid) {
+    if (principal <= EPS) {
       return summarizeSimulation({
         schedule,
         startingPrincipal: startBalance,
@@ -504,55 +524,51 @@
         totalInterest: 0,
         totalPrincipal: 0,
         totalEarly: 0,
+        totalFees: 0,
         monthsElapsed: 0,
-        payoffDate: startDate,
+        payoffDate: paymentStartDate,
         nextPaymentDate: null,
         remainingBalance: 0,
         rateChangeCount,
-        periodMonths,
-        installmentFee
+        periodMonths
       });
     }
 
-    for (let monthIndex = 1; monthIndex <= MAX_MONTHS; monthIndex++) {
-      const date = configuredFirstPaymentDate ? addMonths(firstPaymentDate, monthIndex - 1) : addMonths(startDate, monthIndex);
-      const dueThisMonth = configuredFirstPaymentDate ? ((monthIndex - 1) % periodMonths === 0) : (monthIndex > gracePeriod && ((monthIndex - gracePeriod) % periodMonths === 0));
+    for (let periodIndex = 1; periodIndex <= MAX_MONTHS && balance > EPS; periodIndex += 1) {
+      const date = addMonths(paymentStartDate, (periodIndex - 1) * periodMonths);
       let rateUsed = options.refinance?.rate || getRateForDate(currentState, date, options.useRatePeriods, baseRate);
       rateUsed = Math.max(0, rateUsed);
-
-      rateChangedThisMonth = previousAppliedRate !== null && Math.abs(previousAppliedRate - rateUsed) > EPS;
-      if (rateChangedThisMonth) {
-        rateChangeCount += 1;
-        if (!hasCustomInstallment) {
-          currentPeriodPayment = calculatePeriodicPayment(balance, rateUsed, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
-        }
-      }
+      const rateChangedThisMonth = previousAppliedRate !== null && Math.abs(previousAppliedRate - rateUsed) > EPS;
+      if (rateChangedThisMonth) rateChangeCount += 1;
       previousAppliedRate = rateUsed;
       currentRate = rateUsed;
 
       const monthlyRate = rateUsed / 100 / 12;
+      const periodRate = periodMonths === 1 ? monthlyRate : Math.pow(1 + monthlyRate, periodMonths) - 1;
       const startingBalance = balance;
-      const interest = balance * monthlyRate;
+      const interest = startingBalance * periodRate;
       balance += interest;
       totalInterest += interest;
 
-      let loanPayment = 0;
-      let scheduledPayment = 0;
-      let feeThisInstallment = 0;
-      let principalPaid = 0;
-      let notes = [];
-
-      if (!configuredFirstPaymentDate && monthIndex <= gracePeriod) {
-        notes.push("فترة سماح: تراكم فائدة بدون قسط");
-      } else if (dueThisMonth) {
-        loanPayment = Math.min(balance, currentPeriodPayment + Math.max(0, num(options.extraMonthly)));
-        feeThisInstallment = loanPayment > EPS ? installmentFee : 0;
-        scheduledPayment = loanPayment + feeThisInstallment;
-        principalPaid = Math.max(0, loanPayment - interest);
-        balance -= loanPayment;
-        totalPrincipal += Math.min(principalPaid, startingBalance);
-        if (feeThisInstallment > EPS) notes.push(`رسوم شهرية ${money(feeThisInstallment)}`);
+      const remainingMonthsForCalc = Math.max(1, termMonths - ((periodIndex - 1) * periodMonths));
+      if (customInstallment <= 0) {
+        currentPeriodPayment = calculatePeriodicPayment(balance, rateUsed, remainingMonthsForCalc, periodMonths);
       }
+
+      let scheduledBase = customInstallment > 0 ? customInstallment : currentPeriodPayment;
+      if (num(options.extraMonthly) > 0) {
+        scheduledBase += num(options.extraMonthly) * (periodMonths === 3 ? 3 : 1);
+      }
+      scheduledBase = Math.min(balance, scheduledBase);
+      const installmentFee = scheduledBase > 0 ? feePerInstallment : 0;
+      const scheduledTotal = scheduledBase + installmentFee;
+      const principalPaid = Math.max(0, scheduledBase - interest);
+      balance -= scheduledBase;
+      totalPrincipal += Math.min(principalPaid, startingBalance);
+      totalFees += installmentFee;
+
+      const notes = [];
+      if (rateChangedThisMonth) notes.push(`تغيرت الفائدة إلى ${formatNumber(rateUsed, 2)}%`);
 
       const earlyPayments = earlyPaymentMap.get(monthKey(date)) || [];
       let earlyPaymentAmount = 0;
@@ -563,30 +579,31 @@
         earlyPaymentAmount += cappedAmount;
         balance -= cappedAmount;
         totalEarly += cappedAmount;
-        notes.push(payment.note ? `دفعة مبكرة: ${payment.note}` : "دفعة مبكرة");
+        const recurrenceNote = payment.groupId ? ` (متكرر ${payment.occurrenceIndex || 1}/${payment.occurrenceCount || "?"})` : "";
+        notes.push(payment.note ? `دفعة مبكرة: ${payment.note}${recurrenceNote}` : `دفعة مبكرة${recurrenceNote}`);
 
+        const remainingAfterEarly = Math.max(1, termMonths - (periodIndex * periodMonths));
         if (payment.method === "reduceInstallment") {
-          currentPeriodPayment = calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
+          currentPeriodPayment = calculatePeriodicPayment(balance, currentRate, remainingAfterEarly, periodMonths);
         }
 
         if (payment.method === "balanced") {
-          const reducedPayment = calculatePeriodicPayment(balance, currentRate, remainingTermMonths(termMonths, gracePeriod, monthIndex), periodMonths);
-          currentPeriodPayment = Math.max(reducedPayment, currentPeriodPayment * 0.92);
+          const reducedPayment = calculatePeriodicPayment(balance, currentRate, remainingAfterEarly, periodMonths);
+          currentPeriodPayment = (currentPeriodPayment + reducedPayment) / 2;
         }
       });
 
       if (balance < EPS) balance = 0;
-
-      paymentAmount = currentPeriodPayment;
-      monthsElapsed = monthIndex;
+      paymentAmount = customInstallment > 0 ? customInstallment : currentPeriodPayment;
+      monthsElapsed = periodIndex * periodMonths;
 
       schedule.push({
         number: schedule.length + 1,
         date,
         startingBalance,
-        installment: scheduledPayment,
-        loanPayment,
-        installmentFee: feeThisInstallment,
+        installment: scheduledTotal,
+        installmentBase: scheduledBase,
+        installmentFee,
         principalPaid,
         interestPaid: interest,
         earlyPayment: earlyPaymentAmount,
@@ -595,19 +612,12 @@
         notes: notes.join(" | "),
         hasEarlyPayment: earlyPaymentAmount > 0,
         hasRateChange: rateChangedThisMonth,
-        dueThisMonth
+        dueThisMonth: true
       });
-
-      if (balance <= EPS) break;
-
-      const naturalLimit = gracePeriod + termMonths;
-      if (!options.extraMonthly && !options.oneTimePayment && monthIndex > naturalLimit + 24 && balance > startingBalance * 1.2) {
-        break;
-      }
     }
 
     const lastRow = lastItem(schedule);
-    const nextRow = schedule.find((row) => row.endingBalance > EPS && row.dueThisMonth) || null;
+    const nextRow = schedule.find((row) => dateValue(row.date) >= dateValue(todayISO()) && row.endingBalance > EPS) || null;
 
     return summarizeSimulation({
       schedule,
@@ -616,30 +626,25 @@
       totalInterest,
       totalPrincipal,
       totalEarly,
+      totalFees,
       monthsElapsed,
-      payoffDate: lastRow?.date || startDate,
-      nextPaymentDate: nextRow?.date || firstPaymentDate,
+      payoffDate: lastRow?.date || paymentStartDate,
+      nextPaymentDate: nextRow?.date || paymentStartDate,
       remainingBalance: lastRow?.endingBalance ?? startBalance,
       rateChangeCount,
-      periodMonths,
-      installmentFee
+      periodMonths
     });
   }
 
   function summarizeSimulation(result) {
-    const totalInstallments = result.schedule.reduce((sum, row) => sum + row.installment, 0);
-    const totalLoanPayments = result.schedule.reduce((sum, row) => sum + row.loanPayment, 0);
+    const totalInstallments = result.schedule.reduce((sum, row) => sum + row.installmentBase, 0);
     const totalFees = result.schedule.reduce((sum, row) => sum + row.installmentFee, 0);
-    const totalPaid = totalInstallments + result.totalEarly;
+    const totalPaid = totalInstallments + totalFees + result.totalEarly;
     const paidAmount = result.startingPrincipal - result.remainingBalance;
-    const paymentAmount = result.paymentAmount || 0;
     return {
       ...result,
       totalInstallments,
-      totalLoanPayments,
       totalFees,
-      installmentFee: result.installmentFee || 0,
-      totalDuePayment: paymentAmount + (result.installmentFee || 0),
       totalPaid,
       paidAmount: Math.max(0, paidAmount),
       remainingMonths: Math.max(0, result.schedule.filter((row) => row.endingBalance > EPS).length),
@@ -706,65 +711,63 @@
   function renderDashboard() {
     const current = derived.current;
     const original = derived.original;
+    const live = derived.liveCurrent;
     const interestSaved = derived.interestSaved;
     const monthsSaved = derived.monthsSaved;
     const completion = derived.completion;
 
-    els.remainingBalance.textContent = money(current.remainingBalance);
+    els.remainingBalance.textContent = money(live.remainingBalance);
     els.completionPct.textContent = `${formatNumber(completion, 0)}%`;
     setRingProgress(completion);
 
-    els.payoffDate.textContent = `تاريخ الإغلاق: ${dateLabel(current.payoffDate)}`;
-    els.nextPaymentDate.textContent = `الدفعة القادمة: ${current.nextPaymentDate ? dateLabel(current.nextPaymentDate) : "مكتمل"}`;
+    els.payoffDate.textContent = `تاريخ الإغلاق الحالي: ${dateLabel(current.payoffDate)}`;
+    els.nextPaymentDate.textContent = `الدفعة القادمة: ${live.nextPaymentDate ? dateLabel(live.nextPaymentDate) : "مكتمل"}`;
     els.loanHealth.textContent = `مؤشر الصحة: ${derived.health.label} (${derived.health.score}/100)`;
 
-    const countdown = monthsBetween(todayISO(), current.payoffDate);
-    const currentRate = current.currentRate || num(state.loan.annualRate);
-    const monthlyBudget = num(state.loan.monthlyBudget);
-    const visiblePayment = current.totalDuePayment || current.paymentAmount;
-    const budgetImpact = monthlyBudget > 0 ? safePercent(visiblePayment, monthlyBudget) : 0;
-
+    const fullMonthly = (num(state.loan.customInstallment) || current.paymentAmount) + num(state.loan.installmentFee);
     const cards = [
-      { label: "القسط الشهري", value: money(visiblePayment), hint: `${money(current.paymentAmount)} قسط + ${money(current.installmentFee || 0)} رسوم` },
+      { label: "القسط الشهري الإجمالي", value: money(fullMonthly), hint: `${money(num(state.loan.customInstallment) || current.paymentAmount)} قسط + ${money(num(state.loan.installmentFee))} رسوم` },
       { label: "إجمالي الفائدة", value: money(current.totalInterest), hint: `الخطة الأصلية: ${money(original.totalInterest)}` },
-      { label: "إجمالي الرسوم", value: money(current.totalFees || 0), hint: `${money(current.installmentFee || 0)} على كل قسط` },
-      { label: interestSaved >= 0 ? "الفائدة الموفرة" : "زيادة الفائدة", value: money(Math.abs(interestSaved)), hint: interestSaved >= 0 ? "نتيجة الدفعات أو التحسينات" : "نتيجة ارتفاع الفوائد أو الرسوم" },
+      { label: "إجمالي الرسوم", value: money(current.totalFees), hint: `${money(num(state.loan.installmentFee))} على كل قسط` },
+      { label: "المبلغ المدفوع حتى اليوم", value: money(live.totalPaid), hint: `يشمل الأقساط والدفعات المبكرة حتى ${dateLabel(todayISO())}` },
+      { label: "الأشهر المتبقية", value: `${Math.max(0, live.remainingMonths)} شهر`, hint: `حتى ${dateLabel(current.payoffDate)}` },
+      { label: "كان المفترض ينتهي", value: dateLabel(original.payoffDate), hint: `الخطة الأساسية بدون دفعات مبكرة` },
+      { label: "صار ينتهي", value: dateLabel(current.payoffDate), hint: current.payoffDate !== original.payoffDate ? `تغيّر بفضل الدفعات والتحسينات` : `لم يتغير تاريخ الإغلاق بعد` },
+      { label: interestSaved >= 0 ? "الفائدة الموفرة" : "زيادة الفائدة", value: money(Math.abs(interestSaved)), hint: interestSaved >= 0 ? "نتيجة تحسين الخطة" : "نتيجة تغيّر الخطة" },
       { label: monthsSaved >= 0 ? "الأشهر الموفرة" : "أشهر إضافية", value: `${Math.abs(Math.round(monthsSaved))} شهر`, hint: "مقارنة بالخطة الأصلية" },
-      { label: "المبلغ المدفوع", value: money(current.paidAmount), hint: "أصل القرض المسدد حتى نهاية الخطة" },
-      { label: "الأشهر المتبقية", value: `${Math.max(0, current.monthsElapsed)} شهر`, hint: `العد التنازلي التقريبي: ${Math.max(0, countdown)} شهر` },
-      { label: "عدد الدفعات المبكرة", value: `${state.earlyPayments.length}`, hint: `الإجمالي: ${money(sumBy(state.earlyPayments, "amount"))}` },
-      { label: "الفائدة الحالية", value: `${formatNumber(currentRate, 2)}%`, hint: state.loan.interestType === "variable" ? "قد تتغير حسب الفترة" : "ثابتة" },
-      { label: "أثر الميزانية", value: monthlyBudget > 0 ? `${formatNumber(budgetImpact, 0)}%` : "غير محدد", hint: monthlyBudget > 0 ? "من الميزانية الشهرية المريحة" : "أدخل ميزانية للمقارنة" }
+      { label: "الفائدة الحالية", value: `${formatNumber(current.currentRate || num(state.loan.annualRate), 2)}%`, hint: state.loan.interestType === "variable" ? "قد تتغير حسب الفترة" : "ثابتة" }
     ];
 
     els.kpiGrid.innerHTML = cards.map((card, index) => `
       <article class="metric-card" style="animation-delay:${index * 35}ms">
         <p>${escapeHTML(card.label)}</p>
-        <strong data-count="${escapeHTML(String(card.value))}">${escapeHTML(String(card.value))}</strong>
+        <strong>${escapeHTML(String(card.value))}</strong>
         <small>${escapeHTML(card.hint)}</small>
       </article>
     `).join("");
 
     renderSmartInsights();
+    renderFamilyCards();
     renderTimeline();
   }
 
   function renderSmartInsights() {
     const current = derived.current;
     const original = derived.original;
+    const live = derived.liveCurrent;
     const interestSaved = derived.interestSaved;
     const monthsSaved = derived.monthsSaved;
     const highRate = state.ratePeriods.find((period) => num(period.rate) >= num(state.loan.annualRate) + 1.5);
     const monthlyBudget = num(state.loan.monthlyBudget);
-    const budgetStatus = monthlyBudget > 0 && (current.totalDuePayment || current.paymentAmount) > monthlyBudget ? "أعلى من الميزانية المريحة" : "ضمن نطاق مقبول";
+    const budgetStatus = monthlyBudget > 0 && current.paymentAmount > monthlyBudget ? "أعلى من الميزانية المريحة" : "ضمن نطاق مقبول";
     const bestStrategy = recommendStrategy();
 
     const insights = [
       {
         title: "ملخص Basel التنفيذي",
-        body: current.remainingBalance <= EPS
+        body: live.remainingBalance <= EPS
           ? "القرض مكتمل حسابياً حسب البيانات الحالية. احتفظ بنسخة JSON قبل أي تعديل كبير."
-          : `الرصيد الحالي المتوقع ${money(current.remainingBalance)}، وتاريخ الإغلاق ${dateLabel(current.payoffDate)}.`
+          : `الرصيد الحالي ${money(live.remainingBalance)}، والدفعة القادمة ${live.nextPaymentDate ? dateLabel(live.nextPaymentDate) : "مكتملة"}، وتاريخ الإغلاق ${dateLabel(current.payoffDate)}.`
       },
       {
         title: "أثر الخطة الحالية",
@@ -782,7 +785,7 @@
       },
       {
         title: "أثر الميزانية الشهرية",
-        body: monthlyBudget > 0 ? `القسط الحالي ${budgetStatus}. القسط يمثل ${formatNumber(safePercent((current.totalDuePayment || current.paymentAmount), monthlyBudget), 0)}% من الميزانية التي أدخلتها.` : "أدخل ميزانية شهرية مريحة للحصول على قراءة أدق لضغط القسط."
+        body: monthlyBudget > 0 ? `القسط الحالي ${budgetStatus}. القسط يمثل ${formatNumber(safePercent(current.paymentAmount, monthlyBudget), 0)}% من الميزانية التي أدخلتها.` : "أدخل ميزانية شهرية مريحة للحصول على قراءة أدق لضغط القسط."
       }
     ];
 
@@ -799,14 +802,18 @@
     if (state.loan.startDate) {
       items.push({ title: "بداية القرض", date: state.loan.startDate, body: `${state.loan.loanName || "قرض Basel"} بقيمة أصل ${money(derived.current.startingPrincipal)}.` });
     }
+    if (derived.original.payoffDate) {
+      items.push({ title: "كان المفترض إنهاء القرض", date: derived.original.payoffDate, body: `بدون دفعات مبكرة كان الإغلاق في ${dateLabel(derived.original.payoffDate)}.` });
+    }
     state.ratePeriods.forEach((period) => {
       items.push({ title: "تغيير فائدة", date: period.startDate, body: `الفائدة أصبحت ${formatNumber(period.rate, 2)}% حتى ${dateLabel(period.endDate)}.` });
     });
     state.earlyPayments.forEach((payment) => {
-      items.push({ title: "دفعة مبكرة", date: payment.date, body: `${money(payment.amount)} — ${methodLabel(payment.method)}${payment.note ? ` — ${payment.note}` : ""}.` });
+      const recurrence = payment.groupId ? ` (متكرر ${payment.occurrenceIndex || 1}/${payment.occurrenceCount || "?"})` : "";
+      items.push({ title: "دفعة مبكرة", date: payment.date, body: `${money(payment.amount)} — ${methodLabel(payment.method)}${recurrence}${payment.note ? ` — ${payment.note}` : ""}.` });
     });
     if (derived.current.payoffDate) {
-      items.push({ title: "الإغلاق المتوقع", date: derived.current.payoffDate, body: `الوصول إلى رصيد صفر حسب الحساب الحالي.` });
+      items.push({ title: "الإغلاق الحالي المتوقع", date: derived.current.payoffDate, body: `بعد الدفعات الحالية أصبح الإغلاق في ${dateLabel(derived.current.payoffDate)}.` });
     }
 
     items.sort((a, b) => dateValue(a.date) - dateValue(b.date));
@@ -825,6 +832,27 @@
         </div>
       </div>
     `).join("");
+  }
+
+  function renderFamilyCards() {
+    if (!els.familyCards) return;
+    const payoff = derived.current.payoffDate || derived.original.payoffDate || todayISO();
+    const family = state.profile.family || [];
+    if (!family.length) {
+      els.familyCards.innerHTML = `<div class="smart-item"><strong>لا توجد بيانات عائلية</strong><span>ستظهر الأعمار هنا عند توفرها.</span></div>`;
+      return;
+    }
+    els.familyCards.innerHTML = family.map((person) => {
+      const age = ageOnDate(person.birthDate, payoff);
+      return `
+        <article class="family-card">
+          <p>${escapeHTML(person.relation || "")}</p>
+          <strong>${escapeHTML(person.name)}</strong>
+          <span>${escapeHTML(age.text)}</span>
+          <small>في ${dateLabel(payoff)} · تاريخ الميلاد ${dateLabel(person.birthDate)}</small>
+        </article>
+      `;
+    }).join("");
   }
 
   function renderRates() {
@@ -865,7 +893,7 @@
     const current = derived.current;
     const original = derived.original;
     els.paymentImpact.innerHTML = comparisonCards([
-      { label: "الرصيد بعد الدفعات", value: money(current.remainingBalance), hint: "بعد كل الدفعات المبكرة" },
+      { label: "الرصيد بعد الدفعات", value: money(derived.liveCurrent.remainingBalance), hint: "الرصيد الحالي بعد كل الدفعات" },
       { label: "الفائدة الموفرة", value: money(Math.max(0, derived.interestSaved)), hint: derived.interestSaved >= 0 ? "توفير فعلي" : "لا يوجد توفير" },
       { label: "الأشهر الموفرة", value: `${Math.max(0, Math.round(derived.monthsSaved))} شهر`, hint: `الأصلية ${original.monthsElapsed} شهر` }
     ]);
@@ -875,21 +903,24 @@
       return;
     }
 
-    els.paymentRows.innerHTML = state.earlyPayments.map((payment) => `
+    els.paymentRows.innerHTML = state.earlyPayments.map((payment) => {
+      const recurrence = payment.groupId ? `متكرر ${payment.occurrenceIndex || 1}/${payment.occurrenceCount || "?"}` : "دفعة فردية";
+      return `
       <tr>
         <td>${dateLabel(payment.date)}</td>
         <td>${money(payment.amount)}</td>
         <td>${methodLabel(payment.method)}</td>
         <td>${estimatePaymentImpact(payment)}</td>
-        <td>${escapeHTML(payment.note || "-")}</td>
+        <td>${escapeHTML((payment.note || "-") + ` · ${recurrence}`)}</td>
         <td>
           <span class="row-actions">
             <button class="icon-btn" data-action="edit" data-id="${payment.id}">تعديل</button>
             <button class="icon-btn" data-action="delete" data-id="${payment.id}">حذف</button>
+            ${payment.groupId ? `<button class="icon-btn" data-action="deleteGroup" data-group="${payment.groupId}">حذف السلسلة</button>` : ""}
           </span>
         </td>
-      </tr>
-    `).join("");
+      </tr>`;
+    }).join("");
   }
 
   function renderScheduleFilters() {
@@ -914,7 +945,7 @@
     }
 
     if (!rows.length) {
-      els.scheduleRows.innerHTML = `<tr><td colspan="11">لا توجد نتائج مطابقة.</td></tr>`;
+      els.scheduleRows.innerHTML = `<tr><td colspan="10">لا توجد نتائج مطابقة.</td></tr>`;
       return;
     }
 
@@ -926,7 +957,7 @@
           <td>${dateLabel(row.date)}</td>
           <td>${money(row.startingBalance)}</td>
           <td>${money(row.installment)}</td>
-          <td>${money(row.installmentFee || 0)}</td>
+          <td>${money(row.installmentFee)}</td>
           <td>${money(row.principalPaid)}</td>
           <td>${money(row.interestPaid)}</td>
           <td>${money(row.earlyPayment)}</td>
@@ -987,10 +1018,11 @@
   }
 
   function drawBalanceChart() {
-    const data = derived.current.schedule.filter((_, index) => index % Math.max(1, Math.ceil(derived.current.schedule.length / 48)) === 0);
+    const data = derived.current.schedule.filter((_, index) => index % Math.max(1, Math.ceil(derived.current.schedule.length / 12)) === 0);
     drawLineChart(els.balanceChart, data.map((row) => row.endingBalance), {
       label: "الرصيد",
-      format: moneyShort
+      format: moneyShort,
+      labels: data.map((row) => monthYearLabel(row.date))
     });
   }
 
@@ -1016,6 +1048,23 @@
     drawBars(els.scenarioChart, data, { emptyText: "أدخل بيانات القرض لعرض المقارنة" });
   }
 
+  function bindFabActions() {
+    if (!els.fabMain || !els.fabMenu) return;
+    els.fabMain.addEventListener("click", () => {
+      const open = els.fabWrap.classList.toggle("open");
+      els.fabMain.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    els.fabMenu.addEventListener("click", (event) => {
+      const btn = event.target.closest("button");
+      if (!btn) return;
+      if (btn.dataset.fabTab) setActiveTab(btn.dataset.fabTab);
+      if (btn.dataset.fabAction === "backup") exportJSONBackup();
+      if (btn.dataset.fabAction === "print") window.print();
+      els.fabWrap.classList.remove("open");
+      els.fabMain.setAttribute("aria-expanded", "false");
+    });
+  }
+
   function drawLineChart(canvas, values, options = {}) {
     const ctx = prepareCanvas(canvas);
     if (!ctx) return;
@@ -1027,36 +1076,69 @@
       return;
     }
 
-    const pad = 28;
-    const min = Math.min(...values);
+    const padX = 42;
+    const padTop = 20;
+    const padBottom = 26;
+    const min = 0;
     const max = Math.max(...values);
     const range = Math.max(EPS, max - min);
+    const plotHeight = height - padTop - padBottom;
+    const plotWidth = width - padX * 2;
+
+    ctx.strokeStyle = "rgba(120, 150, 155, 0.22)";
+    ctx.fillStyle = getMutedColor();
+    ctx.font = "11px Almarai, sans-serif";
+    ctx.textAlign = "right";
+
+    for (let i = 0; i <= 4; i += 1) {
+      const y = padTop + (plotHeight / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padX, y);
+      ctx.lineTo(width - padX, y);
+      ctx.stroke();
+      const value = max - ((max / 4) * i);
+      ctx.fillText(options.format ? options.format(value) : formatNumber(value), width - 4, y + 4);
+    }
 
     ctx.lineWidth = 3;
     ctx.strokeStyle = getAccent();
     ctx.beginPath();
     values.forEach((value, index) => {
-      const x = pad + (index / Math.max(1, values.length - 1)) * (width - pad * 2);
-      const y = height - pad - ((value - min) / range) * (height - pad * 2);
+      const x = padX + (index / Math.max(1, values.length - 1)) * plotWidth;
+      const y = height - padBottom - ((value - min) / range) * plotHeight;
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
 
-    const gradient = ctx.createLinearGradient(0, pad, 0, height - pad);
+    const gradient = ctx.createLinearGradient(0, padTop, 0, height - padBottom);
     gradient.addColorStop(0, `rgba(${accentRGB().join(",")}, 0.22)`);
     gradient.addColorStop(1, `rgba(${accentRGB().join(",")}, 0.00)`);
-    ctx.lineTo(width - pad, height - pad);
-    ctx.lineTo(pad, height - pad);
+    ctx.lineTo(width - padX, height - padBottom);
+    ctx.lineTo(padX, height - padBottom);
     ctx.closePath();
     ctx.fillStyle = gradient;
     ctx.fill();
 
     ctx.fillStyle = getMutedColor();
-    ctx.font = "12px Almarai, sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillText(options.format ? options.format(max) : formatNumber(max), width - pad, 18);
-    ctx.fillText(options.format ? options.format(min) : formatNumber(min), width - pad, height - 8);
+    ctx.font = "11px Almarai, sans-serif";
+    ctx.textAlign = "center";
+    const labels = options.labels || [];
+    [0, Math.floor((labels.length - 1) / 2), labels.length - 1].forEach((idx) => {
+      if (idx < 0 || !labels[idx]) return;
+      const x = padX + (idx / Math.max(1, labels.length - 1)) * plotWidth;
+      ctx.fillText(labels[idx], x, height - 6);
+    });
+
+    const lastX = padX + plotWidth;
+    const lastY = height - padBottom - ((values[values.length - 1] - min) / range) * plotHeight;
+    ctx.fillStyle = getAccent();
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = getMutedColor();
+    ctx.textAlign = "left";
+    ctx.fillText(options.format ? options.format(values[values.length - 1]) : formatNumber(values[values.length - 1]), padX, 14);
   }
 
   function drawBars(canvas, data, options = {}) {
@@ -1071,22 +1153,37 @@
       return;
     }
 
-    const pad = 30;
+    const pad = 34;
     const gap = 14;
     const max = Math.max(...valid.map((item) => item.value));
-    const barWidth = Math.max(28, (width - pad * 2 - gap * (valid.length - 1)) / valid.length);
+    const chartHeight = height - pad * 2;
+    const barWidth = Math.max(26, (width - pad * 2 - gap * (valid.length - 1)) / valid.length);
+
+    ctx.strokeStyle = "rgba(120, 150, 155, 0.22)";
+    ctx.fillStyle = getMutedColor();
+    ctx.font = "11px Almarai, sans-serif";
+    for (let i = 0; i <= 4; i += 1) {
+      const y = 12 + (chartHeight / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(width - pad, y);
+      ctx.stroke();
+      const value = max - ((max / 4) * i);
+      ctx.fillText(moneyShort(value), 8, y + 4);
+    }
 
     valid.forEach((item, index) => {
       const x = pad + index * (barWidth + gap);
-      const barHeight = (item.value / max) * (height - pad * 2);
+      const barHeight = (item.value / max) * chartHeight;
       const y = height - pad - barHeight;
       roundRect(ctx, x, y, barWidth, barHeight, 12);
-      ctx.fillStyle = `rgba(${accentRGB().join(",")}, ${0.50 + index * 0.08})`;
+      ctx.fillStyle = `rgba(${accentRGB().join(",")}, ${0.56 + index * 0.08})`;
       ctx.fill();
       ctx.fillStyle = getMutedColor();
-      ctx.font = "11px Almarai, sans-serif";
+      ctx.font = "10px Almarai, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(item.label).slice(0, 12), x + barWidth / 2, height - 8);
+      ctx.fillText(String(item.label).slice(0, 12), x + barWidth / 2, height - 10);
+      ctx.fillText(moneyShort(item.value), x + barWidth / 2, Math.max(14, y - 6));
     });
   }
 
@@ -1102,30 +1199,37 @@
       return;
     }
 
-    const pad = 30;
+    const pad = 34;
     const gap = 12;
     const max = Math.max(...valid.map((item) => item.a + item.b));
+    const chartHeight = height - pad * 2;
     const barWidth = Math.max(24, (width - pad * 2 - gap * (valid.length - 1)) / valid.length);
+
+    ctx.fillStyle = getMutedColor();
+    ctx.font = "11px Almarai, sans-serif";
+    ctx.fillText(`${options.aLabel || "A"} / ${options.bLabel || "B"}`, 8, 14);
 
     valid.forEach((item, index) => {
       const x = pad + index * (barWidth + gap);
       const total = item.a + item.b;
-      const aHeight = (item.a / max) * (height - pad * 2);
-      const bHeight = (item.b / max) * (height - pad * 2);
+      const totalHeight = (total / max) * chartHeight;
+      const aHeight = total <= 0 ? 0 : (item.a / total) * totalHeight;
+      const bHeight = totalHeight - aHeight;
       const aY = height - pad - aHeight;
       const bY = aY - bHeight;
 
       ctx.fillStyle = `rgba(${accentRGB().join(",")}, 0.70)`;
       roundRect(ctx, x, aY, barWidth, aHeight, 10);
       ctx.fill();
-      ctx.fillStyle = "rgba(183, 121, 31, 0.62)";
+      ctx.fillStyle = "rgba(183, 121, 31, 0.68)";
       roundRect(ctx, x, bY, barWidth, bHeight, 10);
       ctx.fill();
 
       ctx.fillStyle = getMutedColor();
-      ctx.font = "11px Almarai, sans-serif";
+      ctx.font = "10px Almarai, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(item.label), x + barWidth / 2, height - 8);
+      ctx.fillText(String(item.label), x + barWidth / 2, height - 10);
+      ctx.fillText(moneyShort(total), x + barWidth / 2, Math.max(14, bY - 6));
     });
   }
 
@@ -1238,6 +1342,7 @@
 
     if (num(loan.principal) <= 0) issues.push("أصل القرض غير مدخل أو يساوي صفر.");
     if (!validDate(loan.startDate)) issues.push("تاريخ بداية القرض غير صحيح.");
+    if (!validDate(loan.firstPaymentDate)) issues.push("تاريخ أول قسط غير صحيح.");
     if (num(loan.termMonths) <= 0) issues.push("مدة القرض يجب أن تكون أكبر من صفر.");
     if (num(loan.downPayment) > num(loan.assetPrice) && num(loan.assetPrice) > 0) issues.push("الدفعة الأولى أكبر من سعر الأصل.");
 
@@ -1308,14 +1413,13 @@
   }
 
   function exportScheduleCSV() {
-    const header = ["Payment Number", "Date", "Starting Balance", "Total Installment", "Installment Fee", "Loan Payment", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
+    const header = ["Payment Number", "Date", "Starting Balance", "Installment", "Installment Fee", "Principal Paid", "Interest Paid", "Early Payment", "Ending Balance", "Interest Rate", "Notes"];
     const rows = derived.current.schedule.map((row) => [
       row.number,
       row.date,
       fixed(row.startingBalance),
       fixed(row.installment),
-      fixed(row.installmentFee || 0),
-      fixed(row.loanPayment || Math.max(0, row.installment - (row.installmentFee || 0))),
+      fixed(row.installmentFee),
       fixed(row.principalPaid),
       fixed(row.interestPaid),
       fixed(row.earlyPayment),
@@ -1353,7 +1457,8 @@
   function validateEarlyPayment(payment) {
     if (!validDate(payment.date)) return { ok: false, message: "أدخل تاريخ دفعة صحيح." };
     if (num(payment.amount) <= 0) return { ok: false, message: "قيمة الدفعة يجب أن تكون أكبر من صفر." };
-    if (dateValue(payment.date) < dateValue(state.loan.startDate)) return { ok: false, message: "لا يمكن تسجيل دفعة قبل تاريخ بداية القرض." };
+    const earliestDate = state.loan.startDate || state.loan.firstPaymentDate || todayISO();
+    if (dateValue(payment.date) < dateValue(earliestDate)) return { ok: false, message: "لا يمكن تسجيل دفعة قبل بداية القرض." };
 
     const simulatedBefore = simulateLoan({ ...state, earlyPayments: state.earlyPayments.filter((item) => item.id !== payment.id) }, {
       useRatePeriods: true,
@@ -1366,12 +1471,6 @@
     }
 
     return { ok: true, message: "" };
-  }
-
-  function applyDeviceClass() {
-    const isCoarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-    const isSmallScreen = Math.min(window.innerWidth || 0, window.screen?.width || Infinity) <= 820;
-    document.body.classList.toggle("mobile-device", Boolean(isCoarse || isSmallScreen));
   }
 
   function applyPreferences() {
@@ -1438,8 +1537,14 @@
     merged.loan.annualRate = Math.max(0, num(merged.loan.annualRate));
     merged.loan.customInstallment = Math.max(0, num(merged.loan.customInstallment));
     merged.loan.installmentFee = Math.max(0, num(merged.loan.installmentFee));
-    merged.loan.firstPaymentDate = validDate(merged.loan.firstPaymentDate) ? merged.loan.firstPaymentDate : "2026-07-01";
     merged.loan.gracePeriod = Math.max(0, Math.round(num(merged.loan.gracePeriod)) || 0);
+    if (!validDate(merged.loan.startDate)) merged.loan.startDate = "2026-06-01";
+    if (!validDate(merged.loan.firstPaymentDate)) merged.loan.firstPaymentDate = "2026-07-01";
+    if (merged.loan.principal <= 0) merged.loan.principal = 51000;
+    if (merged.loan.annualRate <= 0) merged.loan.annualRate = 6.1;
+    if (merged.loan.termMonths <= 1) merged.loan.termMonths = 180;
+    if (merged.loan.customInstallment <= 0) merged.loan.customInstallment = 433.13;
+    if (merged.loan.installmentFee < 0.01) merged.loan.installmentFee = 1.87;
     merged.preferences.reminderDay = clamp(Math.round(num(merged.preferences.reminderDay)) || 1, 1, 28);
     return merged;
   }
@@ -1452,10 +1557,6 @@
       totalInterest: 0,
       totalPrincipal: 0,
       totalEarly: 0,
-      totalFees: 0,
-      installmentFee: 0,
-      totalDuePayment: 0,
-      totalLoanPayments: 0,
       monthsElapsed: 0,
       payoffDate: null,
       nextPaymentDate: null,
@@ -1471,11 +1572,64 @@
       original: empty,
       current: empty,
       whatIf: empty,
+      liveOriginal: { remainingBalance: 0, totalPaid: 0, totalFees: 0, totalInterestPaid: 0, principalPaid: 0, remainingMonths: 0, nextPaymentDate: null, completion: 0 },
+      liveCurrent: { remainingBalance: 0, totalPaid: 0, totalFees: 0, totalInterestPaid: 0, principalPaid: 0, remainingMonths: 0, nextPaymentDate: null, completion: 0 },
       interestSaved: 0,
       monthsSaved: 0,
       completion: 0,
       health: { score: 0, label: "غير كافٍ" }
     };
+  }
+
+  function getLiveSnapshot(simulation) {
+    const today = todayISO();
+    const paidRows = simulation.schedule.filter((row) => dateValue(row.date) <= dateValue(today));
+    const futureRows = simulation.schedule.filter((row) => dateValue(row.date) > dateValue(today) && row.endingBalance > EPS);
+    const firstRow = simulation.schedule[0] || null;
+    const lastPaid = lastItem(paidRows);
+    const beforeFirstPayment = firstRow && dateValue(today) < dateValue(firstRow.date) && !lastPaid;
+    const remainingBalance = beforeFirstPayment
+      ? simulation.startingPrincipal
+      : lastPaid
+        ? lastPaid.endingBalance
+        : simulation.remainingBalance;
+    const totalPaid = paidRows.reduce((sum, row) => sum + row.installment + row.earlyPayment, 0);
+    const totalFees = paidRows.reduce((sum, row) => sum + row.installmentFee, 0);
+    const totalInterestPaid = paidRows.reduce((sum, row) => sum + row.interestPaid, 0);
+    const principalPaid = paidRows.reduce((sum, row) => sum + row.principalPaid + row.earlyPayment, 0);
+    const nextPaymentDate = futureRows[0]?.date || (remainingBalance <= EPS ? null : simulation.nextPaymentDate);
+    return {
+      remainingBalance: Math.max(0, remainingBalance),
+      totalPaid,
+      totalFees,
+      totalInterestPaid,
+      principalPaid,
+      remainingMonths: futureRows.length,
+      nextPaymentDate,
+      completion: safePercent(principalPaid, simulation.startingPrincipal),
+      currentRate: futureRows[0]?.rateUsed || lastPaid?.rateUsed || simulation.currentRate
+    };
+  }
+
+  function ageOnDate(birthDate, targetDate) {
+    if (!validDate(birthDate) || !validDate(targetDate)) return { years: 0, months: 0, text: "غير متاح" };
+    const birth = new Date(`${birthDate}T00:00:00`);
+    const target = new Date(`${targetDate}T00:00:00`);
+    let years = target.getFullYear() - birth.getFullYear();
+    let months = target.getMonth() - birth.getMonth();
+    if (target.getDate() < birth.getDate()) months -= 1;
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+    years = Math.max(0, years);
+    months = Math.max(0, months);
+    return { years, months, text: `${years} سنة و ${months} شهر` };
+  }
+
+  function monthYearLabel(value) {
+    if (!validDate(value)) return "";
+    return new Intl.DateTimeFormat("ar-JO", { year: "2-digit", month: "2-digit" }).format(new Date(`${value}T00:00:00`));
   }
 
   function comparisonCards(cards) {
@@ -1503,7 +1657,7 @@
     let score = 70;
     const interestRatio = safePercent(current.totalInterest, current.startingPrincipal);
     const budget = num(currentState.loan.monthlyBudget);
-    const budgetRatio = budget > 0 ? safePercent((current.totalDuePayment || current.paymentAmount), budget) : 65;
+    const budgetRatio = budget > 0 ? safePercent(current.paymentAmount, budget) : 65;
 
     if (interestRatio < 20) score += 12;
     if (interestRatio > 45) score -= 15;
@@ -1519,7 +1673,7 @@
   }
 
   function recommendStrategy() {
-    const payment = derived.current.totalDuePayment || derived.current.paymentAmount;
+    const payment = derived.current.paymentAmount;
     if (derived.current.startingPrincipal <= 0) return "ابدأ بإدخال أصل القرض والمدة والفائدة للحصول على توصية دقيقة.";
     if (state.ratePeriods.some((period) => num(period.rate) >= num(state.loan.annualRate) + 2)) {
       return "الأولوية الآن هي تقليل الرصيد قبل أو أثناء فترات الفائدة المرتفعة، لأن كل دينار إضافي هناك يقلل الفائدة المركبة لاحقاً.";
@@ -1581,14 +1735,11 @@
     confirmHandler = null;
   }
 
-  function showToast(message, type = "info") {
-    if (!els.toast) return;
+  function showToast(message) {
     els.toast.textContent = message;
-    els.toast.className = `toast show ${type}`;
+    els.toast.classList.add("show");
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => {
-      els.toast.className = "toast";
-    }, 2800);
+    showToast.timer = setTimeout(() => els.toast.classList.remove("show"), 2400);
   }
 
   function toCSV(rows) {

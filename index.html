@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260625_mobile_ux_fix2" />
+  <link rel="stylesheet" href="styles.css?v=20260625_loan_fix3" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -121,6 +121,16 @@
             </div>
           </div>
           <div class="smart-list" id="smartInsights"></div>
+        </section>
+
+        <section class="glass-card animate-in">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">عند نهاية القرض</p>
+              <h3>أعمار العائلة عند الإغلاق</h3>
+            </div>
+          </div>
+          <div class="family-grid" id="familyCards"></div>
         </section>
 
         <section class="glass-card animate-in">
@@ -301,6 +311,17 @@
                 <option value="reduceInstallment">تقليل القسط</option>
                 <option value="balanced">استراتيجية متوازنة</option>
               </select>
+            </label>
+            <label class="field">
+              <span>نوع الدفعة</span>
+              <select id="paymentRepeatType">
+                <option value="single">دفعة واحدة</option>
+                <option value="monthly">دفعة شهرية متكررة</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>مدة التكرار بالأشهر</span>
+              <input type="number" id="paymentRepeatMonths" min="1" step="1" inputmode="numeric" placeholder="مثال: 24 شهر" />
             </label>
             <label class="field">
               <span>ملاحظة</span>
@@ -522,6 +543,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260625_mobile_ux_fix2"></script>
+  <script src="app.js?v=20260625_loan_fix3"></script>
 </body>
 </html>
